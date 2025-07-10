@@ -1,19 +1,22 @@
-import cors from "cors";
-import dotenv from "dotenv";
 import express from "express";
-
+import cors from "cors";
 import routes from "./routes";
-
-dotenv.config();
+import { startScheduler } from "./services/schedulerService"; // Importe o scheduler
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 
 app.use("/api", routes);
 
 app.listen(PORT, () => {
-  console.log(`Servidor rodando em http://localhost:${PORT}`);
+  console.log("================================");
+  console.log("Configuração de Ambiente:");
+  console.log(`TZ: ${process.env.TZ}`);
+  console.log(`EVOLUTION_API_URL: ${process.env.EVOLUTION_API_URL}`);
+  console.log(`WHATSAPP_INSTANCE: ${process.env.WHATSAPP_INSTANCE}`);
+  console.log("================================");
+  startScheduler(); // Inicia o serviço de agendamento
 });

@@ -20,4 +20,7 @@ model Reminder {
   phone       String
   isSent      Boolean  @default(false)
   createdAt   DateTime @default(now())
+  sentAt      DateTime?
+  retryCount  Int?     @default(0)
+  lastError   String?
 }
