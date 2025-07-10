@@ -7,7 +7,7 @@ const prisma = new PrismaClient();
 const JOB_INTERVAL = "* * * * *"; // Executa a cada minuto
 
 // Função principal para verificar lembretes pendentes
-async function checkPendingReminders() {
+export async function checkPendingReminders() {
   const serverNow = new Date(); // Horário atual do servidor (3h adiantado)
 
   // Ajustar para horário real de Brasília (subtrair 3 horas)
@@ -48,7 +48,7 @@ async function checkPendingReminders() {
 }
 
 // Processa um lembrete individual
-async function processReminder(reminder: Reminder) {
+export async function processReminder(reminder: Reminder) {
   try {
     console.log(
       `[Scheduler] Enviando lembrete ${reminder.id} para ${reminder.phone}`
