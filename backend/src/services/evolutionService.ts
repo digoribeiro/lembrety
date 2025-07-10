@@ -78,3 +78,55 @@ export const checkInstanceStatus = async () => {
     throw new Error("Falha ao verificar status da instância");
   }
 };
+
+/**
+ * Configura o webhook para receber mensagens
+ */
+export const configureWebhook = async (webhookUrl: string) => {
+  try {
+    const payload = {
+      webhook: {
+        url: webhookUrl,
+        events: [
+          "MESSAGE_RECEIVED",
+          "MESSAGE_UPSERT",
+          "MESSAGES_UPSERT"
+        ],
+        webhook_by_events: false,
+        webhook_base64: false
+      }
+    };
+
+    const response = await api.put(
+      `/webhook/set/${process.env.WHATSAPP_INSTANCE}`,
+      payload
+    );
+
+    console.log("Webhook configurado com sucesso:", response.data);
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "Erro ao configurar webhook:",
+      error.response?.data || error.message
+    );
+    throw new Error("Falha ao configurar webhook");
+  }
+};
+
+/**
+ * Verifica a configuração atual do webhook
+ */
+export const getWebhookConfig = async () => {
+  try {
+    const response = await api.get(
+      `/webhook/find/${process.env.WHATSAPP_INSTANCE}`
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "Erro ao buscar configuração do webhook:",
+      error.response?.data || error.message
+    );
+    throw new Error("Falha ao buscar configuração do webhook");
+  }
+};

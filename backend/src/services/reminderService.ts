@@ -43,6 +43,19 @@ const formatPhoneNumber = (phone: string): string => {
   return formatted;
 };
 
+// Função para criar lembrete (alias para scheduleReminderService)
+export const createReminder = async (reminderData: {
+  message: string;
+  phone: string;
+  scheduledAt: Date;
+}) => {
+  return await scheduleReminderService(
+    reminderData.message,
+    reminderData.phone,
+    reminderData.scheduledAt
+  );
+};
+
 // Função para testar conexão com a Evolution API
 export const testEvolutionConnection = async () => {
   try {
