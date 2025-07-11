@@ -5,7 +5,7 @@ import {
   isListRemindersMessage,
   processListRemindersCommand,
   isCancelReminderMessage,
-  parseCancelReminderNumber,
+  parseCancelReminderCommand,
   processCancelReminderCommand
 } from '../services/messageParserService';
 import { sendWhatsAppMessage } from '../services/evolutionService';
@@ -81,10 +81,10 @@ export const handleEvolutionWebhook = async (req: Request, res: Response) => {
     // Verifica se é comando para cancelar lembrete
     if (isCancelReminderMessage(messageText)) {
       console.log(`[Webhook] Comando #cancelar detectado de ${senderPhone}: "${messageText}"`);
-      const reminderNumber = parseCancelReminderNumber(messageText);
+      const { number: reminderNumber, confirmed } = parseCancelReminderCommand(messageText);
       
       if (reminderNumber) {
-        const cancelResult = await processCancelReminderCommand(senderPhone, reminderNumber);
+        const cancelResult = await processCancelReminderCommand(senderPhone, reminderNumber, confirmed);
         await sendResponseToUser(senderPhone, cancelResult.response);
       } else {
         await sendResponseToUser(senderPhone, 
@@ -244,10 +244,10 @@ export const testWebhook = async (req: Request, res: Response) => {
 
     // Verifica se é comando para cancelar lembrete
     if (isCancelReminderMessage(message)) {
-      const reminderNumber = parseCancelReminderNumber(message);
+      const { number: reminderNumber, confirmed } = parseCancelReminderCommand(message);
       
       if (reminderNumber) {
-        const cancelResult = await processCancelReminderCommand(phone, reminderNumber);
+        const cancelResult = await processCancelReminderCommand(phone, reminderNumber, confirmed);
         return res.json({
           success: true,
           result: cancelResult

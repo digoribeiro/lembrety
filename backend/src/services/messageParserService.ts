@@ -29,22 +29,29 @@ export function isListRemindersMessage(messageBody: string): boolean {
 }
 
 /**
- * Detecta se uma mensagem contém o comando #cancelar [número]
+ * Detecta se uma mensagem contém o comando #cancelar [número] (com ou sem confirmação)
  */
 export function isCancelReminderMessage(messageBody: string): boolean {
-  return /^#cancelar\s+\d+$/i.test(messageBody.trim());
+  return /^#cancelar\s+\d+(\s+confirmar)?$/i.test(messageBody.trim());
 }
 
 /**
- * Extrai o número do lembrete a ser cancelado do comando #cancelar
+ * Extrai o número do lembrete e se há confirmação do comando #cancelar
  */
-export function parseCancelReminderNumber(messageBody: string): number | null {
-  const match = messageBody.trim().match(/^#cancelar\s+(\d+)$/i);
+export function parseCancelReminderCommand(messageBody: string): { number: number | null; confirmed: boolean } {
+  const match = messageBody.trim().match(/^#cancelar\s+(\d+)(\s+confirmar)?$/i);
+  
   if (match) {
     const number = parseInt(match[1]);
-    return number > 0 ? number : null; // Apenas números positivos
+    const confirmed = !!match[2]; // true se contém "confirmar"
+    
+    return {
+      number: number > 0 ? number : null, // Apenas números positivos
+      confirmed
+    };
   }
-  return null;
+  
+  return { number: null, confirmed: false };
 }
 
 /**
@@ -378,11 +385,12 @@ Você receberá uma mensagem no horário agendado.`,
 }
 
 /**
- * Processa comando #cancelar [número] e cancela o lembrete especificado
+ * Processa comando #cancelar [número] com sistema de confirmação
  */
 export async function processCancelReminderCommand(
   senderPhone: string,
-  reminderNumber: number
+  reminderNumber: number,
+  confirmed: boolean = false
 ): Promise<{ success: boolean; response: string }> {
   try {
     // Busca lembretes pendentes na mesma ordem da listagem
@@ -418,10 +426,7 @@ Exemplo: #cancelar 1`,
     // Pega o lembrete a ser cancelado (índice 0-based)
     const reminderToCancel = pendingReminders[reminderNumber - 1];
 
-    // Cancela o lembrete marcando como enviado com erro específico
-    await cancelReminderById(reminderToCancel.id);
-
-    // Formata a mensagem do lembrete cancelado
+    // Formata dados do lembrete para exibição
     let cleanMessage = reminderToCancel.message;
     if (cleanMessage.startsWith("🔔 *Lembrete:* ")) {
       cleanMessage = cleanMessage.replace("🔔 *Lembrete:* ", "");
@@ -441,6 +446,28 @@ Exemplo: #cancelar 1`,
       hour: "2-digit",
       minute: "2-digit",
     });
+
+    // Se não confirmou, pede confirmação
+    if (!confirmed) {
+      return {
+        success: true,
+        response: `⚠️ *Confirmar Cancelamento*
+
+Tem certeza que deseja cancelar este lembrete?
+
+🗑️ Lembrete #${reminderNumber}:
+📅 ${formattedDate}
+💬 ${truncatedMessage}
+
+Para confirmar o cancelamento, digite:
+*#cancelar ${reminderNumber} confirmar*
+
+Para manter o lembrete, ignore esta mensagem.`,
+      };
+    }
+
+    // Se confirmou, efetivamente cancela o lembrete
+    await cancelReminderById(reminderToCancel.id);
 
     return {
       success: true,
@@ -499,7 +526,7 @@ ${formattedList}
 
 💡 *Dicas:*
 • Para criar: *#lembrete [hora] [mensagem]*
-• Para cancelar: *#cancelar [número]*
+• Para cancelar: *#cancelar [número]* (pede confirmação)
 • Para ajuda: *#lembrete*`,
     };
   } catch (error) {
@@ -572,14 +599,15 @@ export function generateHelpMessage(): string {
 
 📋 *Gerenciar lembretes:*
 • #lembrar (lista todos)
-• #cancelar 1 (cancela o primeiro)
-• #cancelar 3 (cancela o terceiro)
+• #cancelar 1 (pede confirmação)
+• #cancelar 1 confirmar (cancela definitivamente)
 
 ⚡ *Dicas:*
 • Use horário no formato 24h (ex: 14:30)
 • Datas no formato DD/MM ou DD/MM/AAAA
 • Se o horário já passou hoje, será agendado para amanhã
-• Os números para cancelar correspondem à ordem em *#lembrar*
+• Cancelamentos pedem confirmação para evitar acidentes
+• Os números correspondem à ordem em *#lembrar*
 
 ❓ *Dúvidas?* Envie uma mensagem com *#lembrete* para ver esta ajuda novamente.`;
 }

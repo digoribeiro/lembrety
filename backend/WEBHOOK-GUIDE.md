@@ -21,7 +21,7 @@ O sistema permite que usuários criem lembretes automaticamente enviando mensage
 - ✅ Faz parse de data/hora em múltiplos formatos
 - ✅ Cria lembretes no banco de dados
 - ✅ Lista lembretes pendentes do usuário
-- ✅ Cancela lembretes específicos por numeração
+- ✅ Cancela lembretes específicos por numeração (com confirmação)
 - ✅ Responde ao usuário confirmando operações
 - ✅ Envia lembretes no horário agendado
 
@@ -85,6 +85,7 @@ TZ=America/Sao_Paulo
 ```
 #cancelar [número]
 ```
+*Sistema de confirmação em duas etapas para evitar cancelamentos acidentais*
 
 ### Exemplos Práticos
 
@@ -123,15 +124,46 @@ TZ=America/Sao_Paulo
 
 💡 Dicas:
 • Para criar: #lembrete [hora] [mensagem]
+• Para cancelar: #cancelar [número] (pede confirmação)
 • Para ajuda: #lembrete
 ```
 
-**5. Cancelar lembrete:**
+**Exemplo de fluxo de cancelamento:**
+```
+Usuário: #cancelar 2
+
+Sistema: ⚠️ Confirmar Cancelamento
+
+Tem certeza que deseja cancelar este lembrete?
+
+🗑️ Lembrete #2:
+📅 11/07/2025, 19:00
+💬 Reunião importante
+
+Para confirmar o cancelamento, digite:
+#cancelar 2 confirmar
+
+Para manter o lembrete, ignore esta mensagem.
+
+Usuário: #cancelar 2 confirmar
+
+Sistema: ✅ Lembrete Cancelado
+
+🗑️ Lembrete #2 cancelado com sucesso:
+📅 11/07/2025, 19:00
+💬 Reunião importante
+```
+
+**5. Cancelar lembrete (com confirmação):**
 ```
 #cancelar 1
-#cancelar 3
 ```
-*Cancela o 1º ou 3º lembrete da lista (conforme numeração do #lembrar)*
+*Solicita confirmação para cancelar o 1º lembrete*
+
+```
+#cancelar 1 confirmar
+```
+*Cancela definitivamente o 1º lembrete após confirmação*
 
 **6. Ajuda:**
 ```
