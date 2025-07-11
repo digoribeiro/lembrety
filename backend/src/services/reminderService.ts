@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, RecurrenceType } from "@prisma/client";
 
 import { sendWhatsAppMessage, verifyInstanceStatus } from "./evolutionService";
 
@@ -46,17 +46,37 @@ const formatPhoneNumber = (phone: string): string => {
   return formatted;
 };
 
-// Função para criar lembrete (alias para scheduleReminderService)
+// Função para criar lembrete com suporte a recorrência
 export const createReminder = async (reminderData: {
   message: string;
   phone: string;
   scheduledAt: Date;
+  isRecurring?: boolean;
+  recurrenceType?: RecurrenceType;
+  recurrencePattern?: string;
+  seriesId?: string;
+  parentId?: string;
+  endDate?: Date;
 }) => {
-  return await scheduleReminderService(
-    reminderData.message,
-    reminderData.phone,
-    reminderData.scheduledAt
-  );
+  const prefixedMessage = reminderData.message.startsWith("🔔 *Lembrete:*")
+    ? reminderData.message
+    : `🔔 *Lembrete:* ${reminderData.message}`;
+
+  const reminder = await prisma.reminder.create({
+    data: {
+      message: prefixedMessage,
+      phone: formatPhoneNumber(reminderData.phone),
+      scheduledAt: reminderData.scheduledAt,
+      isRecurring: reminderData.isRecurring || false,
+      recurrenceType: reminderData.recurrenceType,
+      recurrencePattern: reminderData.recurrencePattern,
+      seriesId: reminderData.seriesId,
+      parentId: reminderData.parentId,
+      endDate: reminderData.endDate,
+    },
+  });
+
+  return reminder;
 };
 
 // Função para buscar lembretes pendentes de um usuário

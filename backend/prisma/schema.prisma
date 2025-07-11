@@ -13,6 +13,13 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum RecurrenceType {
+  DAILY
+  WEEKLY  
+  SPECIFIC_DAYS
+  MONTHLY
+}
+
 model Reminder {
   id          String    @id @default(uuid())
   message     String
@@ -24,4 +31,16 @@ model Reminder {
   retryCount  Int?      @default(0)
   lastError   String?
   source      String    @default("api")
+  
+  // Campos para recorrência
+  isRecurring      Boolean          @default(false)
+  recurrenceType   RecurrenceType?
+  recurrencePattern String?          // Ex: "1,3,5" para seg,qua,sex ou "1" para diário
+  seriesId         String?          // Identificador da série de recorrência
+  parentId         String?          // ID do lembrete original da série
+  endDate          DateTime?        // Data final da recorrência (opcional)
+  
+  // Relacionamentos
+  parent    Reminder? @relation("RecurrenceSeries", fields: [parentId], references: [id])
+  children  Reminder[] @relation("RecurrenceSeries")
 }

@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import { PrismaClient } from "@prisma/client";
 import { sendWhatsAppMessage } from "./evolutionService";
+import { createNextOccurrence } from "./recurrenceService";
 import { Reminder } from "@prisma/client";
 
 const prisma = new PrismaClient();
@@ -80,6 +81,20 @@ export async function processReminder(reminder: Reminder) {
     });
 
     console.log(`[Scheduler] Lembrete ${reminder.id} enviado com sucesso`);
+
+    // Se é um lembrete recorrente, cria a próxima ocorrência
+    if (reminder.isRecurring && reminder.recurrenceType && reminder.recurrencePattern) {
+      try {
+        const nextOccurrence = await createNextOccurrence(reminder);
+        if (nextOccurrence) {
+          console.log(`[Scheduler] Próxima ocorrência criada: ${nextOccurrence.id} para ${nextOccurrence.scheduledAt.toISOString()}`);
+        } else {
+          console.log(`[Scheduler] Série de recorrência ${reminder.seriesId} chegou ao fim`);
+        }
+      } catch (error) {
+        console.error(`[Scheduler] Erro ao criar próxima ocorrência para ${reminder.id}:`, error);
+      }
+    }
   } catch (error) {
     // Tratamento seguro de erros unknown
     let errorMessage = "Erro desconhecido";

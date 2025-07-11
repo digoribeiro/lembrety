@@ -1,10 +1,15 @@
 import { createReminder, getPendingRemindersByPhone, cancelReminderById, editReminderById, rescheduleReminderById } from "./reminderService";
-import { Reminder } from "@prisma/client";
+import { cancelRecurringSeries } from "./recurrenceService";
+import { Reminder, RecurrenceType } from "@prisma/client";
 
 interface ParsedReminder {
   phone: string;
   message: string;
   scheduledAt: Date;
+  isRecurring?: boolean;
+  recurrenceType?: RecurrenceType;
+  recurrencePattern?: string;
+  seriesId?: string;
 }
 
 interface WebhookMessage {
@@ -129,6 +134,185 @@ export function parseRescheduleReminderCommand(messageBody: string): {
 }
 
 /**
+ * Detecta e analisa padrões de recorrência na mensagem
+ */
+export function parseRecurrencePattern(messageText: string): {
+  isRecurring: boolean;
+  recurrenceType?: RecurrenceType;
+  recurrencePattern?: string;
+  cleanMessage: string;
+} {
+  let cleanMessage = messageText;
+  
+  // Padrões de recorrência diária
+  const dailyPatterns = [
+    /\b(todos os dias|todo dia|diariamente)\b/i,
+  ];
+  
+  // Padrões de recorrência semanal
+  const weeklyPatterns = [
+    /\b(toda semana|semanalmente|toda (segunda|terça|quarta|quinta|sexta|sábado|domingo))\b/i,
+  ];
+  
+  // Padrões de recorrência mensal
+  const monthlyPatterns = [
+    /\b(todo mês|mensalmente)\b/i,
+  ];
+  
+  // Padrões de dias específicos da semana
+  const specificDaysPattern = /\b(?:toda\s+)?(segunda|terça|quarta|quinta|sexta|sábado|domingo)(?:\s*,\s*(segunda|terça|quarta|quinta|sexta|sábado|domingo))*(?:\s+e\s+(segunda|terça|quarta|quinta|sexta|sábado|domingo))?\b/i;
+  
+  // Verifica padrões diários
+  for (const pattern of dailyPatterns) {
+    if (pattern.test(messageText)) {
+      cleanMessage = messageText.replace(pattern, '').trim();
+      return {
+        isRecurring: true,
+        recurrenceType: RecurrenceType.DAILY,
+        recurrencePattern: '1', // Todos os dias
+        cleanMessage: cleanMessage.replace(/\s+/g, ' ') // Remove espaços extras
+      };
+    }
+  }
+  
+  // Verifica padrões mensais
+  for (const pattern of monthlyPatterns) {
+    if (pattern.test(messageText)) {
+      cleanMessage = messageText.replace(pattern, '').trim();
+      return {
+        isRecurring: true,
+        recurrenceType: RecurrenceType.MONTHLY,
+        recurrencePattern: '1', // Todo mês
+        cleanMessage: cleanMessage.replace(/\s+/g, ' ')
+      };
+    }
+  }
+  
+  // Verifica padrões semanais simples
+  for (const pattern of weeklyPatterns) {
+    const match = pattern.exec(messageText);
+    if (match) {
+      cleanMessage = messageText.replace(pattern, '').trim();
+      
+      // Se especifica um dia específico (ex: "toda segunda")
+      if (match[2]) {
+        const dayNumber = getDayNumber(match[2]);
+        return {
+          isRecurring: true,
+          recurrenceType: RecurrenceType.WEEKLY,
+          recurrencePattern: dayNumber.toString(),
+          cleanMessage: cleanMessage.replace(/\s+/g, ' ')
+        };
+      }
+      
+      // Senão é semanal genérico
+      return {
+        isRecurring: true,
+        recurrenceType: RecurrenceType.WEEKLY,
+        recurrencePattern: '1', // Toda semana
+        cleanMessage: cleanMessage.replace(/\s+/g, ' ')
+      };
+    }
+  }
+  
+  // Verifica dias específicos da semana (ex: "segunda, quarta e sexta")
+  const specificMatch = specificDaysPattern.exec(messageText);
+  if (specificMatch) {
+    const dayNumbers: number[] = [];
+    
+    // Processa todos os grupos capturados
+    for (let i = 1; i < specificMatch.length; i++) {
+      if (specificMatch[i]) {
+        const dayNum = getDayNumber(specificMatch[i]);
+        if (dayNum !== -1 && !dayNumbers.includes(dayNum)) {
+          dayNumbers.push(dayNum);
+        }
+      }
+    }
+    
+    if (dayNumbers.length > 0) {
+      dayNumbers.sort(); // Ordena os dias
+      cleanMessage = messageText.replace(specificDaysPattern, '').trim();
+      
+      return {
+        isRecurring: true,
+        recurrenceType: RecurrenceType.SPECIFIC_DAYS,
+        recurrencePattern: dayNumbers.join(','),
+        cleanMessage: cleanMessage.replace(/\s+/g, ' ')
+      };
+    }
+  }
+  
+  // Nenhum padrão de recorrência encontrado
+  return {
+    isRecurring: false,
+    cleanMessage: messageText
+  };
+}
+
+/**
+ * Converte nome do dia da semana para número (0=domingo, 1=segunda, etc.)
+ */
+function getDayNumber(dayName: string): number {
+  const dayMap: { [key: string]: number } = {
+    'domingo': 0,
+    'segunda': 1,
+    'terça': 2,
+    'quarta': 3,
+    'quinta': 4,
+    'sexta': 5,
+    'sábado': 6,
+  };
+  
+  return dayMap[dayName.toLowerCase()] ?? -1;
+}
+
+/**
+ * Gera um ID único para uma série de recorrência
+ */
+function generateSeriesId(): string {
+  return `series_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+/**
+ * Gera descrição textual do padrão de recorrência
+ */
+function getRecurrenceDescription(recurrenceType: RecurrenceType, pattern: string): string {
+  switch (recurrenceType) {
+    case RecurrenceType.DAILY:
+      return "Todos os dias";
+    
+    case RecurrenceType.WEEKLY:
+      if (pattern === '1') {
+        return "Toda semana";
+      } else {
+        const dayNames = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+        const dayNum = parseInt(pattern);
+        return `Toda ${dayNames[dayNum]}`;
+      }
+    
+    case RecurrenceType.SPECIFIC_DAYS:
+      const dayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+      const days = pattern.split(',').map(d => dayNames[parseInt(d)]);
+      
+      if (days.length === 1) {
+        return `Toda ${days[0]}`;
+      } else if (days.length === 2) {
+        return `${days[0]} e ${days[1]}`;
+      } else {
+        const lastDay = days.pop();
+        return `${days.join(', ')} e ${lastDay}`;
+      }
+    
+    case RecurrenceType.MONTHLY:
+      return "Todo mês";
+    
+    default:
+      return "Recorrência personalizada";
+  }
+}
+
+/**
  * Parse da mensagem #lembrete para extrair informações do lembrete
  *
  * Formatos suportados:
@@ -145,11 +329,15 @@ export function parseReminderMessage(
 ): ParsedReminder | null {
   try {
     // Remove o #lembrete do início
-    const content = messageBody.replace(/#lembrete\s*/i, "").trim();
+    let content = messageBody.replace(/#lembrete\s*/i, "").trim();
 
     if (!content) {
       throw new Error("Conteúdo do lembrete não pode estar vazio");
     }
+
+    // Detecta padrões de recorrência antes de processar data/hora
+    const recurrenceInfo = parseRecurrencePattern(content);
+    content = recurrenceInfo.cleanMessage;
 
     // Regex para capturar diferentes formatos de data/hora
     const patterns = [
@@ -182,11 +370,21 @@ export function parseReminderMessage(
       );
     }
 
-    return {
+    const result: ParsedReminder = {
       phone: senderPhone,
       message: reminderText.trim(),
       scheduledAt,
     };
+
+    // Adiciona informações de recorrência se detectadas
+    if (recurrenceInfo.isRecurring) {
+      result.isRecurring = true;
+      result.recurrenceType = recurrenceInfo.recurrenceType;
+      result.recurrencePattern = recurrenceInfo.recurrencePattern;
+      result.seriesId = generateSeriesId();
+    }
+
+    return result;
   } catch (error) {
     console.error("Erro ao fazer parse da mensagem de lembrete:", error);
     return null;
@@ -416,6 +614,10 @@ Formato: #lembrete [quando] [hora] [mensagem]`,
       message: parsedReminder.message,
       scheduledAt: parsedReminder.scheduledAt,
       phone: parsedReminder.phone,
+      isRecurring: parsedReminder.isRecurring,
+      recurrenceType: parsedReminder.recurrenceType,
+      recurrencePattern: parsedReminder.recurrencePattern,
+      seriesId: parsedReminder.seriesId,
     });
 
     const formatDate = (date: Date): string => {
@@ -436,15 +638,20 @@ Formato: #lembrete [quando] [hora] [mensagem]`,
       ? "\n\n⏰ *Horário já passou hoje, agendado para amanhã.*"
       : "";
 
+    // Adiciona informação sobre recorrência
+    const recurrenceNote = parsedReminder.isRecurring
+      ? `\n\n🔄 *Lembrete recorrente:* ${getRecurrenceDescription(parsedReminder.recurrenceType!, parsedReminder.recurrencePattern!)}`
+      : "";
+
     return {
       success: true,
       response: `✅ Lembrete criado com sucesso!
 
 📅 Data: ${formatDate(parsedReminder.scheduledAt)}
 💬 Mensagem: ${parsedReminder.message}
-📞 Para: ${parsedReminder.phone}${rescheduledNote}
+📞 Para: ${parsedReminder.phone}${rescheduledNote}${recurrenceNote}
 
-Você receberá uma mensagem no horário agendado.`,
+${parsedReminder.isRecurring ? 'Este lembrete se repetirá automaticamente.' : 'Você receberá uma mensagem no horário agendado.'}`,
       reminder,
     };
   } catch (error) {
@@ -523,6 +730,14 @@ Exemplo: #cancelar 1`,
 
     // Se não confirmou, pede confirmação
     if (!confirmed) {
+      const recurrenceInfo = reminderToCancel.isRecurring && reminderToCancel.recurrenceType && reminderToCancel.recurrencePattern
+        ? `\n🔄 ${getRecurrenceDescription(reminderToCancel.recurrenceType, reminderToCancel.recurrencePattern)}`
+        : "";
+
+      const recurrenceNote = reminderToCancel.isRecurring
+        ? `\n\n⚠️ *Este é um lembrete recorrente!*\nCancelar irá remover TODA a série de repetições futuras.`
+        : "";
+
       return {
         success: true,
         response: `⚠️ *Confirmar Cancelamento*
@@ -531,7 +746,7 @@ Tem certeza que deseja cancelar este lembrete?
 
 🗑️ Lembrete #${reminderNumber}:
 📅 ${formattedDate}
-💬 ${truncatedMessage}
+💬 ${truncatedMessage}${recurrenceInfo}${recurrenceNote}
 
 Para confirmar o cancelamento, digite:
 *#cancelar ${reminderNumber} confirmar*
@@ -541,7 +756,20 @@ Para manter o lembrete, ignore esta mensagem.`,
     }
 
     // Se confirmou, efetivamente cancela o lembrete
-    await cancelReminderById(reminderToCancel.id);
+    let canceledCount = 1;
+    
+    if (reminderToCancel.isRecurring && reminderToCancel.seriesId) {
+      // Cancela toda a série de recorrência
+      const seriesCanceledCount = await cancelRecurringSeries(reminderToCancel.seriesId);
+      canceledCount = seriesCanceledCount;
+    } else {
+      // Cancela apenas este lembrete
+      await cancelReminderById(reminderToCancel.id);
+    }
+
+    const recurrenceNote = reminderToCancel.isRecurring
+      ? `\n\n🔄 *Série cancelada:* ${canceledCount} lembrete(s) da recorrência foram cancelados.`
+      : "";
 
     return {
       success: true,
@@ -550,7 +778,7 @@ Para manter o lembrete, ignore esta mensagem.`,
 🗑️ Lembrete #${reminderNumber} cancelado com sucesso:
 
 📅 ${formattedDate}
-💬 ${truncatedMessage}
+💬 ${truncatedMessage}${recurrenceNote}
 
 💡 *Dicas:*
 • Para ver lembretes: *#lembrar*
@@ -859,8 +1087,14 @@ function formatRemindersList(reminders: Reminder[]): string {
           ? cleanMessage.substring(0, maxLength) + "..."
           : cleanMessage;
 
-      return `${index + 1}. 📅 ${formattedDate}
-   💬 ${truncatedMessage}`;
+      // Adiciona indicador de recorrência
+      const recurrenceIcon = reminder.isRecurring ? "🔄 " : "";
+      const recurrenceInfo = reminder.isRecurring && reminder.recurrenceType && reminder.recurrencePattern
+        ? `\n   ${getRecurrenceDescription(reminder.recurrenceType, reminder.recurrencePattern)}`
+        : "";
+
+      return `${index + 1}. ${recurrenceIcon}📅 ${formattedDate}
+   💬 ${truncatedMessage}${recurrenceInfo}`;
     })
     .join("\n\n");
 }
@@ -892,6 +1126,12 @@ export function generateHelpMessage(): string {
 • #lembrete 15:30 Reunião com cliente
 • #lembrete 09:00 Tomar remédio
 • #lembrete amanhã 07:00 Academia
+
+🔄 *Lembretes recorrentes:*
+• #lembrete 08:00 Tomar remédio todos os dias
+• #lembrete 14:00 Reunião segunda, quarta e sexta
+• #lembrete 09:00 Academia toda segunda
+• #lembrete 10:00 Reunião mensal todo mês
 
 📅 *Reagendar lembretes:*
 • #reagendar 1 16:00 (nova hora)
