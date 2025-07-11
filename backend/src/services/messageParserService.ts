@@ -19,27 +19,30 @@ interface WebhookMessage {
  * Detecta se uma mensagem contém o comando #lembrete
  */
 export function isReminderMessage(messageBody: string): boolean {
-  return messageBody.toLowerCase().includes('#lembrete');
+  return messageBody.toLowerCase().includes("#lembrete");
 }
 
 /**
  * Parse da mensagem #lembrete para extrair informações do lembrete
- * 
+ *
  * Formatos suportados:
  * - #lembrete 15:30 Reunião com cliente
- * - #lembrete 15:30 25/12 Reunião com cliente  
+ * - #lembrete 15:30 25/12 Reunião com cliente
  * - #lembrete amanhã 15:30 Reunião com cliente
  * - #lembrete hoje 15:30 Reunião com cliente
  * - #lembrete segunda 15:30 Reunião com cliente
  * - #lembrete 25/12/2024 15:30 Reunião com cliente
  */
-export function parseReminderMessage(messageBody: string, senderPhone: string): ParsedReminder | null {
+export function parseReminderMessage(
+  messageBody: string,
+  senderPhone: string
+): ParsedReminder | null {
   try {
     // Remove o #lembrete do início
-    const content = messageBody.replace(/#lembrete\s*/i, '').trim();
-    
+    const content = messageBody.replace(/#lembrete\s*/i, "").trim();
+
     if (!content) {
-      throw new Error('Conteúdo do lembrete não pode estar vazio');
+      throw new Error("Conteúdo do lembrete não pode estar vazio");
     }
 
     // Regex para capturar diferentes formatos de data/hora
@@ -55,11 +58,11 @@ export function parseReminderMessage(messageBody: string, senderPhone: string): 
     ];
 
     let scheduledAt: Date | null = null;
-    let reminderText = '';
+    let reminderText = "";
 
     for (const pattern of patterns) {
       const match = content.match(pattern);
-      
+
       if (match) {
         scheduledAt = parseDateTime(match);
         reminderText = extractMessage(match);
@@ -68,17 +71,18 @@ export function parseReminderMessage(messageBody: string, senderPhone: string): 
     }
 
     if (!scheduledAt || !reminderText) {
-      throw new Error('Formato de lembrete inválido. Use: #lembrete HH:MM Mensagem ou #lembrete DD/MM HH:MM Mensagem');
+      throw new Error(
+        "Formato de lembrete inválido. Use: #lembrete HH:MM Mensagem ou #lembrete DD/MM HH:MM Mensagem"
+      );
     }
 
     return {
       phone: senderPhone,
       message: reminderText.trim(),
-      scheduledAt
+      scheduledAt,
     };
-
   } catch (error) {
-    console.error('Erro ao fazer parse da mensagem de lembrete:', error);
+    console.error("Erro ao fazer parse da mensagem de lembrete:", error);
     return null;
   }
 }
@@ -86,7 +90,13 @@ export function parseReminderMessage(messageBody: string, senderPhone: string): 
 /**
  * Cria data salvando horário literal como UTC (simula UTC-3)
  */
-function createLiteralDate(year: number, month: number, day: number, hour: number, minute: number): Date {
+function createLiteralDate(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number
+): Date {
   // Para salvar "07:00" como "07:00:00.000Z" no banco
   return new Date(Date.UTC(year, month, day, hour, minute));
 }
@@ -108,7 +118,7 @@ function parseDateTime(match: RegExpMatchArray): Date | null {
       const day = parseInt(match[3]);
       const month = parseInt(match[4]) - 1; // JS months are 0-indexed
       const year = match[5] ? parseInt(match[5]) : currentYear;
-      
+
       const date = createLiteralDate(year, month, day, hour, minute);
       return validateDate(date);
     }
@@ -117,17 +127,34 @@ function parseDateTime(match: RegExpMatchArray): Date | null {
     if (match[3] && match[1] && match[2] && !match[4]) {
       const hour = parseInt(match[1]);
       const minute = parseInt(match[2]);
-      
-      const date = createLiteralDate(currentYear, currentMonth, currentDate, hour, minute);
-      
+
+      const date = createLiteralDate(
+        currentYear,
+        currentMonth,
+        currentDate,
+        hour,
+        minute
+      );
+
       // Se o horário já passou hoje, agenda para amanhã
-      const nowUTC = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 
-        now.getHours(), now.getMinutes()));
-      if (date <= nowUTC) {
+      // Comparação usando o mesmo sistema de horário (UTC literal)
+      const nowLiteralUTC = new Date(
+        Date.UTC(
+          now.getFullYear(),
+          now.getMonth(),
+          now.getDate(),
+          now.getHours(),
+          now.getMinutes()
+        )
+      );
+      if (date <= nowLiteralUTC) {
         date.setDate(date.getDate() + 1);
+        // Marca que foi agendado para amanhã por ter passado o horário
+        (date as any)._wasRescheduled = true;
       }
-      
-      return validateDate(date);
+
+      // Não chama validateDate para evitar dupla validação
+      return date;
     }
 
     // Formato: DD/MM[/YYYY] HH:MM Mensagem
@@ -137,7 +164,7 @@ function parseDateTime(match: RegExpMatchArray): Date | null {
       const year = match[3] ? parseInt(match[3]) : currentYear;
       const hour = parseInt(match[4]);
       const minute = parseInt(match[5]);
-      
+
       const date = createLiteralDate(year, month, day, hour, minute);
       return validateDate(date);
     }
@@ -147,43 +174,62 @@ function parseDateTime(match: RegExpMatchArray): Date | null {
       const dayWord = match[1].toLowerCase();
       const hour = parseInt(match[2]);
       const minute = parseInt(match[3]);
-      
-      const date = createLiteralDate(currentYear, currentMonth, currentDate, hour, minute);
-      
-      if (dayWord === 'hoje') {
-        const nowUTC = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 
-          now.getHours(), now.getMinutes()));
-        if (date <= nowUTC) {
+
+      const date = createLiteralDate(
+        currentYear,
+        currentMonth,
+        currentDate,
+        hour,
+        minute
+      );
+
+      if (dayWord === "hoje") {
+        const nowLiteralUTC = new Date(
+          Date.UTC(
+            now.getFullYear(),
+            now.getMonth(),
+            now.getDate(),
+            now.getHours(),
+            now.getMinutes()
+          )
+        );
+        if (date <= nowLiteralUTC) {
           date.setDate(date.getDate() + 1); // Se já passou, agenda para amanhã
         }
-      } else if (dayWord === 'amanhã') {
+      } else if (dayWord === "amanhã") {
         date.setDate(date.getDate() + 1);
       } else {
         // Dias da semana
         const dayMap: { [key: string]: number } = {
-          'domingo': 0, 'segunda': 1, 'terça': 2, 'quarta': 3,
-          'quinta': 4, 'sexta': 5, 'sábado': 6
+          domingo: 0,
+          segunda: 1,
+          terça: 2,
+          quarta: 3,
+          quinta: 4,
+          sexta: 5,
+          sábado: 6,
         };
-        
+
         const targetDay = dayMap[dayWord];
         if (targetDay !== undefined) {
           const currentDay = now.getDay();
           let daysToAdd = targetDay - currentDay;
-          
+
           if (daysToAdd <= 0) {
             daysToAdd += 7; // Próxima semana
           }
-          
+
           date.setDate(date.getDate() + daysToAdd);
         }
       }
-      
-      return validateDate(date);
+
+      // Não chama validateDate para evitar dupla validação - dias da semana sempre são futuros
+      return date;
     }
 
     return null;
   } catch (error) {
-    console.error('Erro ao fazer parse da data/hora:', error);
+    console.error("Erro ao fazer parse da data/hora:", error);
     return null;
   }
 }
@@ -198,23 +244,18 @@ function extractMessage(match: RegExpMatchArray): string {
       return match[i];
     }
   }
-  return '';
+  return "";
 }
 
 /**
- * Valida se a data é válida e não está no passado
+ * Valida apenas se a data é válida (não verifica se é passada)
  */
 function validateDate(date: Date): Date | null {
   if (isNaN(date.getTime())) {
     return null;
   }
-  
-  const now = new Date();
-  if (date <= now) {
-    // Se a data já passou, adiciona um dia
-    date.setDate(date.getDate() + 1);
-  }
-  
+
+  // Retorna a data sem modificações - a lógica de tempo já foi tratada anteriormente
   return date;
 }
 
@@ -233,7 +274,7 @@ export async function processWebhookMessage(message: WebhookMessage): Promise<{
     if (!messageBody) {
       return {
         success: false,
-        response: 'Mensagem vazia recebida'
+        response: "Mensagem vazia recebida",
       };
     }
 
@@ -241,13 +282,13 @@ export async function processWebhookMessage(message: WebhookMessage): Promise<{
     if (!isReminderMessage(messageBody)) {
       return {
         success: false,
-        response: 'Não é uma mensagem de lembrete'
+        response: "Não é uma mensagem de lembrete",
       };
     }
 
     // Faz o parse da mensagem
     const parsedReminder = parseReminderMessage(messageBody, senderPhone);
-    
+
     if (!parsedReminder) {
       return {
         success: false,
@@ -260,7 +301,7 @@ Exemplos de uso:
 • #lembrete segunda 14:00 Apresentação projeto
 • #lembrete 25/12/2024 20:00 Ceia de Natal
 
-Formato: #lembrete [quando] [hora] [mensagem]`
+Formato: #lembrete [quando] [hora] [mensagem]`,
       };
     }
 
@@ -268,20 +309,26 @@ Formato: #lembrete [quando] [hora] [mensagem]`
     const reminder = await createReminder({
       message: parsedReminder.message,
       scheduledAt: parsedReminder.scheduledAt,
-      phone: parsedReminder.phone
+      phone: parsedReminder.phone,
     });
 
     const formatDate = (date: Date): string => {
       // Como salvamos horário literal em UTC, exibimos usando UTC para manter o horário original
-      return date.toLocaleString('pt-BR', {
-        timeZone: 'UTC',
-        day: '2-digit',
-        month: '2-digit', 
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
+      return date.toLocaleString("pt-BR", {
+        timeZone: "UTC",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
       });
     };
+
+    // Verifica se foi reagendado para amanhã
+    const wasRescheduled = (parsedReminder.scheduledAt as any)._wasRescheduled;
+    const rescheduledNote = wasRescheduled
+      ? "\n\n⏰ *Horário já passou hoje, agendado para amanhã.*"
+      : "";
 
     return {
       success: true,
@@ -289,18 +336,18 @@ Formato: #lembrete [quando] [hora] [mensagem]`
 
 📅 Data: ${formatDate(parsedReminder.scheduledAt)}
 💬 Mensagem: ${parsedReminder.message}
-📞 Para: ${parsedReminder.phone}
+📞 Para: ${parsedReminder.phone}${rescheduledNote}
 
 Você receberá uma mensagem no horário agendado.`,
-      reminder
+      reminder,
     };
-
   } catch (error) {
-    console.error('Erro ao processar mensagem do webhook:', error);
-    
+    console.error("Erro ao processar mensagem do webhook:", error);
+
     return {
       success: false,
-      response: '❌ Erro interno ao processar lembrete. Tente novamente em alguns minutos.'
+      response:
+        "❌ Erro interno ao processar lembrete. Tente novamente em alguns minutos.",
     };
   }
 }
@@ -336,4 +383,4 @@ Para criar um lembrete, use o formato:
 • Mensagem pode ter qualquer tamanho
 
 ❓ *Dúvidas?* Envie uma mensagem com *#lembrete* para ver esta ajuda novamente.`;
-} 
+}
