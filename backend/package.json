@@ -11,8 +11,14 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "test:unit": "jest --testPathPattern=unit",
-    "test:integration": "jest --testPathPattern=integration"
+    "db:migrate": "prisma migrate deploy",
+    "db:generate": "prisma generate",
+    "db:studio": "prisma studio",
+    "scheduler": "ts-node src/scripts/checkInstance.ts",
+    "cleanup:dry-run": "ts-node src/scripts/cleanupOldReminders.ts --dry-run",
+    "cleanup:details": "ts-node src/scripts/cleanupOldReminders.ts --dry-run --details",
+    "cleanup:execute": "ts-node src/scripts/cleanupOldReminders.ts",
+    "cleanup:safe": "ts-node src/scripts/cleanupOldReminders.ts --max-retries=10 --days-old=30"
   },
   "keywords": [],
   "author": "",
