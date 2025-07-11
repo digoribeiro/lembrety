@@ -1,4 +1,4 @@
-import { PrismaClient, RecurrenceType, Reminder } from "@prisma/client";
+import { PrismaClient, Reminder } from "@prisma/client";
 import { createReminder } from "./reminderService";
 
 const prisma = new PrismaClient();
@@ -8,18 +8,18 @@ const prisma = new PrismaClient();
  */
 export function calculateNextOccurrence(
   currentDate: Date,
-  recurrenceType: RecurrenceType,
+  recurrenceType: string,
   recurrencePattern: string
 ): Date | null {
   const nextDate = new Date(currentDate);
 
   switch (recurrenceType) {
-    case RecurrenceType.DAILY:
+    case 'DAILY':
       // Adiciona 1 dia
       nextDate.setDate(nextDate.getDate() + 1);
       return nextDate;
 
-    case RecurrenceType.WEEKLY:
+    case 'WEEKLY':
       if (recurrencePattern === '1') {
         // Toda semana (7 dias)
         nextDate.setDate(nextDate.getDate() + 7);
@@ -37,7 +37,7 @@ export function calculateNextOccurrence(
       }
       return nextDate;
 
-    case RecurrenceType.SPECIFIC_DAYS:
+    case 'SPECIFIC_DAYS':
       // Dias específicos da semana (ex: "1,3,5" = segunda, quarta, sexta)
       const days = recurrencePattern.split(',').map(d => parseInt(d)).sort();
       const currentDay = nextDate.getDay();
@@ -57,7 +57,7 @@ export function calculateNextOccurrence(
       }
       return nextDate;
 
-    case RecurrenceType.MONTHLY:
+    case 'MONTHLY':
       // Adiciona 1 mês mantendo o mesmo dia e hora
       nextDate.setMonth(nextDate.getMonth() + 1);
       
@@ -85,7 +85,7 @@ export async function createNextOccurrence(reminder: Reminder): Promise<Reminder
   // Calcula a próxima data
   const nextDate = calculateNextOccurrence(
     reminder.scheduledAt,
-    reminder.recurrenceType,
+    reminder.recurrenceType as string,
     reminder.recurrencePattern
   );
 
@@ -144,7 +144,7 @@ export async function processRecurringReminders(): Promise<void> {
       // Verifica se já existe uma próxima ocorrência criada
       const nextDate = calculateNextOccurrence(
         reminder.scheduledAt,
-        reminder.recurrenceType!,
+        reminder.recurrenceType! as string,
         reminder.recurrencePattern!
       );
 

@@ -38,7 +38,14 @@ describe('SchedulerService', () => {
     retryCount: 0,
     lastError: null,
     source: 'api', // Campo obrigatório adicionado
-  };
+    // Campos de recorrência
+    isRecurring: false,
+    recurrenceType: null,
+    recurrencePattern: null,
+    seriesId: null,
+    parentId: null,
+    endDate: null,
+  } as any;
 
   beforeEach(() => {
     // Reset all mocks
