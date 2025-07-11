@@ -14,6 +14,9 @@ jest.mock('../../../src/services/messageParserService', () => ({
   isCancelReminderMessage: jest.fn(),
   parseCancelReminderCommand: jest.fn(),
   processCancelReminderCommand: jest.fn(),
+  isEditReminderMessage: jest.fn(),
+  parseEditReminderCommand: jest.fn(),
+  processEditReminderCommand: jest.fn(),
 }));
 
 jest.mock('../../../src/services/evolutionService', () => ({
@@ -27,7 +30,10 @@ import {
   processListRemindersCommand,
   isCancelReminderMessage,
   parseCancelReminderCommand,
-  processCancelReminderCommand
+  processCancelReminderCommand,
+  isEditReminderMessage,
+  parseEditReminderCommand,
+  processEditReminderCommand
 } from '../../../src/services/messageParserService';
 
 import { sendWhatsAppMessage } from '../../../src/services/evolutionService';
@@ -39,6 +45,9 @@ const mockProcessListRemindersCommand = processListRemindersCommand as jest.Mock
 const mockIsCancelReminderMessage = isCancelReminderMessage as jest.MockedFunction<typeof isCancelReminderMessage>;
 const mockParseCancelReminderCommand = parseCancelReminderCommand as jest.MockedFunction<typeof parseCancelReminderCommand>;
 const mockProcessCancelReminderCommand = processCancelReminderCommand as jest.MockedFunction<typeof processCancelReminderCommand>;
+const mockIsEditReminderMessage = isEditReminderMessage as jest.MockedFunction<typeof isEditReminderMessage>;
+const mockParseEditReminderCommand = parseEditReminderCommand as jest.MockedFunction<typeof parseEditReminderCommand>;
+const mockProcessEditReminderCommand = processEditReminderCommand as jest.MockedFunction<typeof processEditReminderCommand>;
 const mockSendWhatsAppMessage = sendWhatsAppMessage as jest.MockedFunction<typeof sendWhatsAppMessage>;
 
 describe('WebhookController', () => {
@@ -87,6 +96,11 @@ describe('WebhookController', () => {
 
     beforeEach(() => {
       mockSendWhatsAppMessage.mockResolvedValue(undefined);
+      
+      // Configurar defaults para evitar erros em testes que não configuram esses mocks
+      mockIsEditReminderMessage.mockReturnValue(false);
+      mockIsCancelReminderMessage.mockReturnValue(false);
+      mockIsListRemindersMessage.mockReturnValue(false);
     });
 
     it('deve responder com status 200 imediatamente', async () => {

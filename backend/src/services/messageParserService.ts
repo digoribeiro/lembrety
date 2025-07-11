@@ -1,4 +1,4 @@
-import { createReminder, getPendingRemindersByPhone, cancelReminderById } from "./reminderService";
+import { createReminder, getPendingRemindersByPhone, cancelReminderById, editReminderById } from "./reminderService";
 import { Reminder } from "@prisma/client";
 
 interface ParsedReminder {
@@ -36,6 +36,13 @@ export function isCancelReminderMessage(messageBody: string): boolean {
 }
 
 /**
+ * Detecta se uma mensagem contém o comando #editar [número] [nova mensagem]
+ */
+export function isEditReminderMessage(messageBody: string): boolean {
+  return /^#editar\s+\d+\s+.+$/i.test(messageBody.trim());
+}
+
+/**
  * Extrai o número do lembrete e se há confirmação do comando #cancelar
  */
 export function parseCancelReminderCommand(messageBody: string): { number: number | null; confirmed: boolean } {
@@ -52,6 +59,30 @@ export function parseCancelReminderCommand(messageBody: string): { number: numbe
   }
   
   return { number: null, confirmed: false };
+}
+
+/**
+ * Extrai o número do lembrete e a nova mensagem do comando #editar
+ */
+export function parseEditReminderCommand(messageBody: string): { number: number | null; newMessage: string | null } {
+  const match = messageBody.trim().match(/^#editar\s+(\d+)\s+(.+)$/i);
+  
+  if (match) {
+    const number = parseInt(match[1]);
+    const newMessage = match[2].trim();
+    
+    // Se number é inválido (0 ou negativo), retorna null para ambos
+    if (number <= 0) {
+      return { number: null, newMessage: null };
+    }
+    
+    return {
+      number: number,
+      newMessage: newMessage.length > 0 ? newMessage : null
+    };
+  }
+  
+  return { number: null, newMessage: null };
 }
 
 /**
@@ -494,6 +525,106 @@ Para manter o lembrete, ignore esta mensagem.`,
 }
 
 /**
+ * Processa comando #editar [número] [nova mensagem]
+ */
+export async function processEditReminderCommand(
+  senderPhone: string,
+  reminderNumber: number,
+  newMessage: string
+): Promise<{ success: boolean; response: string }> {
+  try {
+    // Busca lembretes pendentes na mesma ordem da listagem
+    const pendingReminders = await getPendingRemindersByPhone(senderPhone);
+
+    if (pendingReminders.length === 0) {
+      return {
+        success: false,
+        response: `📝 *Editar Lembrete*
+
+❌ Você não tem lembretes pendentes para editar.
+
+Para ver seus lembretes: *#lembrar*
+Para criar um novo: *#lembrete [hora] [mensagem]*`,
+      };
+    }
+
+    // Verifica se o número está dentro do range
+    if (reminderNumber < 1 || reminderNumber > pendingReminders.length) {
+      return {
+        success: false,
+        response: `📝 *Editar Lembrete*
+
+❌ Número inválido. Você tem ${pendingReminders.length} lembrete(s) pendente(s).
+
+Para ver seus lembretes: *#lembrar*
+Para editar: *#editar [número] [nova mensagem]*
+
+Exemplo: #editar 1 Nova mensagem`,
+      };
+    }
+
+    // Pega o lembrete a ser editado (índice 0-based)
+    const reminderToEdit = pendingReminders[reminderNumber - 1];
+
+    // Formata data para exibição
+    const formattedDate = reminderToEdit.scheduledAt.toLocaleString("pt-BR", {
+      timeZone: "UTC",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    // Obter mensagem anterior para comparação
+    let oldMessage = reminderToEdit.message;
+    if (oldMessage.startsWith("🔔 *Lembrete:* ")) {
+      oldMessage = oldMessage.replace("🔔 *Lembrete:* ", "");
+    }
+
+    // Edita o lembrete no banco de dados
+    await editReminderById(reminderToEdit.id, newMessage);
+
+    // Trunca mensagens para exibição
+    const maxLength = 40;
+    const truncatedOldMessage = oldMessage.length > maxLength 
+      ? oldMessage.substring(0, maxLength) + "..." 
+      : oldMessage;
+    const truncatedNewMessage = newMessage.length > maxLength 
+      ? newMessage.substring(0, maxLength) + "..." 
+      : newMessage;
+
+    return {
+      success: true,
+      response: `✅ *Lembrete Editado*
+
+📝 Lembrete #${reminderNumber} editado com sucesso:
+
+📅 ${formattedDate}
+
+📝 *Mensagem anterior:*
+${truncatedOldMessage}
+
+✏️ *Nova mensagem:*
+${truncatedNewMessage}
+
+💡 *Dicas:*
+• Para ver lembretes: *#lembrar*
+• Para cancelar: *#cancelar [número]*
+• Para criar novo: *#lembrete [hora] [mensagem]*`,
+    };
+  } catch (error) {
+    console.error("Erro ao editar lembrete:", error);
+
+    return {
+      success: false,
+      response:
+        "❌ Erro ao editar lembrete. Tente novamente em alguns minutos.",
+    };
+  }
+}
+
+/**
  * Processa comando #lembrar e retorna lista de lembretes pendentes
  */
 export async function processListRemindersCommand(
@@ -590,6 +721,9 @@ export function generateHelpMessage(): string {
 🗑️ *Para cancelar um lembrete:*
 *#cancelar [número]*
 
+✏️ *Para editar um lembrete:*
+*#editar [número] [nova mensagem]*
+
 📅 *Exemplos de uso:*
 
 ⏰ *Criar lembretes:*
@@ -601,6 +735,7 @@ export function generateHelpMessage(): string {
 • #lembrar (lista todos)
 • #cancelar 1 (pede confirmação)
 • #cancelar 1 confirmar (cancela definitivamente)
+• #editar 1 Nova mensagem (altera o texto)
 
 ⚡ *Dicas:*
 • Use horário no formato 24h (ex: 14:30)

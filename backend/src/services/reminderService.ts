@@ -93,6 +93,23 @@ export const cancelReminderById = async (reminderId: string) => {
   });
 };
 
+// Função para editar a mensagem de um lembrete por ID
+export const editReminderById = async (reminderId: string, newMessage: string) => {
+  // Adiciona o prefixo se não existir
+  const prefixedMessage = newMessage.startsWith("🔔 *Lembrete:*")
+    ? newMessage
+    : `🔔 *Lembrete:* ${newMessage}`;
+
+  return await prisma.reminder.update({
+    where: {
+      id: reminderId,
+    },
+    data: {
+      message: prefixedMessage,
+    },
+  });
+};
+
 // Função para testar conexão com a Evolution API
 export const testEvolutionConnection = async () => {
   try {

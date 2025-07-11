@@ -8,6 +8,9 @@ import {
   processListRemindersCommand,
   processWebhookMessage,
   generateHelpMessage,
+  isEditReminderMessage,
+  parseEditReminderCommand,
+  processEditReminderCommand,
 } from '../../../src/services/messageParserService';
 
 // Mock das dependências
@@ -15,13 +18,15 @@ jest.mock('../../../src/services/reminderService', () => ({
   getPendingRemindersByPhone: jest.fn(),
   cancelReminderById: jest.fn(),
   createReminder: jest.fn(),
+  editReminderById: jest.fn(),
 }));
 
-import { getPendingRemindersByPhone, cancelReminderById, createReminder } from '../../../src/services/reminderService';
+import { getPendingRemindersByPhone, cancelReminderById, createReminder, editReminderById } from '../../../src/services/reminderService';
 
 const mockGetPendingRemindersByPhone = getPendingRemindersByPhone as jest.MockedFunction<typeof getPendingRemindersByPhone>;
 const mockCancelReminderById = cancelReminderById as jest.MockedFunction<typeof cancelReminderById>;
 const mockCreateReminder = createReminder as jest.MockedFunction<typeof createReminder>;
+const mockEditReminderById = editReminderById as jest.MockedFunction<typeof editReminderById>;
 
 describe('MessageParserService', () => {
   beforeEach(() => {
@@ -128,6 +133,76 @@ describe('MessageParserService', () => {
       expect(parseCancelReminderCommand('  #cancelar   5   confirmar  ')).toEqual({
         number: 5,
         confirmed: true
+      });
+    });
+  });
+
+  describe('isEditReminderMessage', () => {
+    it('deve detectar comando #editar válido', () => {
+      expect(isEditReminderMessage('#editar 1 Nova mensagem')).toBe(true);
+      expect(isEditReminderMessage('#editar 10 Mensagem alterada')).toBe(true);
+      expect(isEditReminderMessage('#EDITAR 5 Texto novo')).toBe(true);
+      expect(isEditReminderMessage('  #editar 3 Nova mensagem  ')).toBe(true);
+    });
+
+    it('deve rejeitar comandos #editar inválidos', () => {
+      expect(isEditReminderMessage('#editar')).toBe(false);
+      expect(isEditReminderMessage('#editar 1')).toBe(false);
+      expect(isEditReminderMessage('#editar abc Nova mensagem')).toBe(false);
+      expect(isEditReminderMessage('#editar 1 2 3')).toBe(true); // Este deveria ser válido
+      expect(isEditReminderMessage('#editar -1 Mensagem')).toBe(false);
+    });
+  });
+
+  describe('parseEditReminderCommand', () => {
+    it('deve fazer parse de comando válido', () => {
+      expect(parseEditReminderCommand('#editar 1 Nova mensagem')).toEqual({
+        number: 1,
+        newMessage: 'Nova mensagem'
+      });
+      expect(parseEditReminderCommand('#editar 10 Mensagem muito longa aqui')).toEqual({
+        number: 10,
+        newMessage: 'Mensagem muito longa aqui'
+      });
+    });
+
+    it('deve lidar com case insensitive', () => {
+      expect(parseEditReminderCommand('#EDITAR 5 NOVA MENSAGEM')).toEqual({
+        number: 5,
+        newMessage: 'NOVA MENSAGEM'
+      });
+    });
+
+    it('deve retornar null para comandos inválidos', () => {
+      expect(parseEditReminderCommand('#editar abc Nova mensagem')).toEqual({
+        number: null,
+        newMessage: null
+      });
+      expect(parseEditReminderCommand('#editar 0 Mensagem')).toEqual({
+        number: null,
+        newMessage: null
+      });
+      expect(parseEditReminderCommand('#editar -1 Mensagem')).toEqual({
+        number: null,
+        newMessage: null
+      });
+      expect(parseEditReminderCommand('#editar 1')).toEqual({
+        number: null,
+        newMessage: null
+      });
+    });
+
+    it('deve preservar espaços na mensagem', () => {
+      expect(parseEditReminderCommand('#editar 1 Mensagem com   múltiplos espaços')).toEqual({
+        number: 1,
+        newMessage: 'Mensagem com   múltiplos espaços'
+      });
+    });
+
+    it('deve ignorar espaços extras ao redor', () => {
+      expect(parseEditReminderCommand('  #editar   2   Nova mensagem  ')).toEqual({
+        number: 2,
+        newMessage: 'Nova mensagem'
       });
     });
   });
@@ -320,6 +395,132 @@ describe('MessageParserService', () => {
       
       expect(result.response).toContain('💬 Reunião importante');
       expect(result.response).not.toContain('🔔 *Lembrete:* Reunião importante');
+    });
+  });
+
+  describe('processEditReminderCommand', () => {
+    const senderPhone = '5521964660801';
+    const mockReminders = [
+      {
+        id: '1',
+        message: '🔔 *Lembrete:* Reunião importante',
+        scheduledAt: new Date('2025-07-11T14:00:00.000Z'),
+        phone: senderPhone,
+        isSent: false,
+        createdAt: new Date(),
+        sentAt: null,
+        retryCount: 0,
+        lastError: null,
+        source: 'api'
+      },
+      {
+        id: '2',
+        message: '🔔 *Lembrete:* Ligar para médico',
+        scheduledAt: new Date('2025-07-12T09:00:00.000Z'),
+        phone: senderPhone,
+        isSent: false,
+        createdAt: new Date(),
+        sentAt: null,
+        retryCount: 0,
+        lastError: null,
+        source: 'api'
+      }
+    ];
+
+    beforeEach(() => {
+      mockGetPendingRemindersByPhone.mockResolvedValue(mockReminders);
+      mockEditReminderById.mockResolvedValue({} as any);
+    });
+
+    it('deve editar lembrete com sucesso', async () => {
+      const result = await processEditReminderCommand(senderPhone, 1, 'Nova mensagem importante');
+      
+      expect(result.success).toBe(true);
+      expect(result.response).toContain('✅ *Lembrete Editado*');
+      expect(result.response).toContain('Lembrete #1 editado com sucesso');
+      expect(result.response).toContain('📝 *Mensagem anterior:*');
+      expect(result.response).toContain('Reunião importante');
+      expect(result.response).toContain('✏️ *Nova mensagem:*');
+      expect(result.response).toContain('Nova mensagem importante');
+      expect(mockEditReminderById).toHaveBeenCalledWith('1', 'Nova mensagem importante');
+    });
+
+    it('deve tratar número inválido (muito alto)', async () => {
+      const result = await processEditReminderCommand(senderPhone, 10, 'Nova mensagem');
+      
+      expect(result.success).toBe(false);
+      expect(result.response).toContain('❌ Número inválido');
+      expect(result.response).toContain('Você tem 2 lembrete(s) pendente(s)');
+      expect(mockEditReminderById).not.toHaveBeenCalled();
+    });
+
+    it('deve tratar número inválido (menor que 1)', async () => {
+      const result = await processEditReminderCommand(senderPhone, 0, 'Nova mensagem');
+      
+      expect(result.success).toBe(false);
+      expect(result.response).toContain('❌ Número inválido');
+      expect(mockEditReminderById).not.toHaveBeenCalled();
+    });
+
+    it('deve tratar usuário sem lembretes', async () => {
+      mockGetPendingRemindersByPhone.mockResolvedValue([]);
+      
+      const result = await processEditReminderCommand(senderPhone, 1, 'Nova mensagem');
+      
+      expect(result.success).toBe(false);
+      expect(result.response).toContain('❌ Você não tem lembretes pendentes para editar');
+      expect(mockEditReminderById).not.toHaveBeenCalled();
+    });
+
+    it('deve tratar erro na busca de lembretes', async () => {
+      mockGetPendingRemindersByPhone.mockRejectedValue(new Error('Erro no banco'));
+      
+      const result = await processEditReminderCommand(senderPhone, 1, 'Nova mensagem');
+      
+      expect(result.success).toBe(false);
+      expect(result.response).toContain('❌ Erro ao editar lembrete');
+      expect(mockEditReminderById).not.toHaveBeenCalled();
+    });
+
+    it('deve truncar mensagens longas na exibição', async () => {
+      const longMessage = 'A'.repeat(100);
+      const result = await processEditReminderCommand(senderPhone, 1, longMessage);
+      
+      expect(result.success).toBe(true);
+      expect(result.response).toContain('...');
+      expect(mockEditReminderById).toHaveBeenCalledWith('1', longMessage);
+    });
+
+    it('deve remover prefixo do lembrete na exibição da mensagem anterior', async () => {
+      const result = await processEditReminderCommand(senderPhone, 1, 'Nova mensagem');
+      
+      expect(result.response).toContain('Reunião importante');
+      expect(result.response).not.toContain('🔔 *Lembrete:* Reunião importante');
+    });
+
+    it('deve mostrar data formatada corretamente', async () => {
+      const result = await processEditReminderCommand(senderPhone, 1, 'Nova mensagem');
+      
+      expect(result.response).toContain('📅 11/07/2025, 14:00');
+    });
+
+    it('deve tratar erro no serviço de edição', async () => {
+      mockEditReminderById.mockRejectedValue(new Error('Erro no banco'));
+      
+      const result = await processEditReminderCommand(senderPhone, 1, 'Nova mensagem');
+      
+      expect(result.success).toBe(false);
+      expect(result.response).toContain('❌ Erro ao editar lembrete');
+    });
+
+    it('deve editar o segundo lembrete corretamente', async () => {
+      const result = await processEditReminderCommand(senderPhone, 2, 'Ligar para dentista');
+      
+      expect(result.success).toBe(true);
+      expect(result.response).toContain('Lembrete #2 editado com sucesso');
+      expect(result.response).toContain('Ligar para médico'); // Mensagem anterior
+      expect(result.response).toContain('Ligar para dentista'); // Nova mensagem
+      expect(mockEditReminderById).toHaveBeenCalledWith('2', 'Ligar para dentista');
     });
   });
 

@@ -6,7 +6,10 @@ import {
   processListRemindersCommand,
   isCancelReminderMessage,
   parseCancelReminderCommand,
-  processCancelReminderCommand
+  processCancelReminderCommand,
+  isEditReminderMessage,
+  parseEditReminderCommand,
+  processEditReminderCommand
 } from '../services/messageParserService';
 import { sendWhatsAppMessage } from '../services/evolutionService';
 
@@ -77,6 +80,22 @@ export const handleEvolutionWebhook = async (req: Request, res: Response) => {
     }
 
     console.log(`[Webhook] Processando mensagem de ${senderPhone}: "${messageText}"`);
+
+    // Verifica se é comando para editar lembrete
+    if (isEditReminderMessage(messageText)) {
+      console.log(`[Webhook] Comando #editar detectado de ${senderPhone}: "${messageText}"`);
+      const { number: reminderNumber, newMessage } = parseEditReminderCommand(messageText);
+      
+      if (reminderNumber && newMessage) {
+        const editResult = await processEditReminderCommand(senderPhone, reminderNumber, newMessage);
+        await sendResponseToUser(senderPhone, editResult.response);
+      } else {
+        await sendResponseToUser(senderPhone, 
+          '❌ Formato inválido. Use: *#editar [número] [nova mensagem]*\n\nExemplo: #editar 1 Nova mensagem do lembrete'
+        );
+      }
+      return;
+    }
 
     // Verifica se é comando para cancelar lembrete
     if (isCancelReminderMessage(messageText)) {
@@ -240,6 +259,27 @@ export const testWebhook = async (req: Request, res: Response) => {
       return res.status(400).json({
         error: 'phone e message são obrigatórios'
       });
+    }
+
+    // Verifica se é comando para editar lembrete
+    if (isEditReminderMessage(message)) {
+      const { number: reminderNumber, newMessage } = parseEditReminderCommand(message);
+      
+      if (reminderNumber && newMessage) {
+        const editResult = await processEditReminderCommand(phone, reminderNumber, newMessage);
+        return res.json({
+          success: true,
+          result: editResult
+        });
+      } else {
+        return res.json({
+          success: false,
+          result: {
+            success: false,
+            response: '❌ Formato inválido. Use: *#editar [número] [nova mensagem]*\n\nExemplo: #editar 1 Nova mensagem'
+          }
+        });
+      }
     }
 
     // Verifica se é comando para cancelar lembrete
