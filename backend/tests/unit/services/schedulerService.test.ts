@@ -18,12 +18,12 @@ jest.mock('node-cron', () => ({
   schedule: mockCronSchedule,
 }));
 
-jest.mock('../../src/services/evolutionService', () => ({
+jest.mock('../../../src/services/evolutionService', () => ({
   sendWhatsAppMessage: mockSendWhatsAppMessage,
 }));
 
 // Importar após os mocks
-import { startScheduler, checkPendingReminders, processReminder } from '../../src/services/schedulerService';
+import { startScheduler, checkPendingReminders, processReminder } from '../../../src/services/schedulerService';
 
 describe('SchedulerService', () => {
   // Mock data
