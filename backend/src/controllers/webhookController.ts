@@ -41,18 +41,18 @@ export const handleEvolutionWebhook = async (req: Request, res: Response) => {
     res.status(200).json({ received: true });
 
     // Verifica se é um evento de mensagem recebida
-    if (!isValidMessageEvent(payload)) {
-      console.log('[Webhook] Evento ignorado:', payload.event);
-      return;
-    }
+    // if (!isValidMessageEvent(payload)) {
+    //   console.log('[Webhook] Evento ignorado:', payload.event);
+    //   return;
+    // }
 
     const message = payload.data;
     
     // Ignora mensagens enviadas por nós mesmos
-    if (message.key?.fromMe) {
-      console.log('[Webhook] Mensagem própria ignorada');
-      return;
-    }
+    // if (message.key?.fromMe) {
+    //   console.log('[Webhook] Mensagem própria ignorada');
+    //   return;
+    // }
 
     // Extrai o texto da mensagem
     const messageText = extractMessageText(message);

@@ -14,13 +14,14 @@ datasource db {
 }
 
 model Reminder {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   message     String
   scheduledAt DateTime
   phone       String
-  isSent      Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  isSent      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
   sentAt      DateTime?
-  retryCount  Int?     @default(0)
+  retryCount  Int?      @default(0)
   lastError   String?
+  source      String    @default("api")
 }
