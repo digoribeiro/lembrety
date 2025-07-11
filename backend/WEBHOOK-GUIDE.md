@@ -17,9 +17,10 @@ Este guia explica como configurar e usar o sistema de webhook que permite criar 
 O sistema permite que usuários criem lembretes automaticamente enviando mensagens de WhatsApp com o comando `#lembrete`. O sistema:
 
 - ✅ Recebe mensagens via webhook do Evolution API
-- ✅ Detecta comandos `#lembrete`
+- ✅ Detecta comandos `#lembrete` e `#lembrar`
 - ✅ Faz parse de data/hora em múltiplos formatos
 - ✅ Cria lembretes no banco de dados
+- ✅ Lista lembretes pendentes do usuário
 - ✅ Responde ao usuário confirmando o agendamento
 - ✅ Envia lembretes no horário agendado
 
@@ -69,9 +70,14 @@ TZ=America/Sao_Paulo
 
 ### Comandos Básicos
 
-Envie uma mensagem no WhatsApp com o formato:
+**Criar lembrete:**
 ```
 #lembrete [quando] [hora] [mensagem]
+```
+
+**Listar lembretes pendentes:**
+```
+#lembrar
 ```
 
 ### Exemplos Práticos
@@ -95,7 +101,26 @@ Envie uma mensagem no WhatsApp com o formato:
 #lembrete hoje 18:00 Comprar presente
 ```
 
-**4. Ajuda:**
+**4. Listar lembretes:**
+```
+#lembrar
+```
+*Exemplo de resposta:*
+```
+📝 Seus Lembretes Pendentes
+
+1. 📅 11/07/2025, 16:00
+   💬 Reunião de equipe
+
+2. 📅 12/07/2025, 09:00
+   💬 Tomar remédio para pressão
+
+💡 Dicas:
+• Para criar: #lembrete [hora] [mensagem]
+• Para ajuda: #lembrete
+```
+
+**5. Ajuda:**
 ```
 #lembrete
 ```

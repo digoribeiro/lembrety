@@ -1,5 +1,10 @@
 import { Request, Response } from 'express';
-import { processWebhookMessage, generateHelpMessage } from '../services/messageParserService';
+import { 
+  processWebhookMessage, 
+  generateHelpMessage,
+  isListRemindersMessage,
+  processListRemindersCommand
+} from '../services/messageParserService';
 import { sendWhatsAppMessage } from '../services/evolutionService';
 
 /**
@@ -70,6 +75,21 @@ export const handleEvolutionWebhook = async (req: Request, res: Response) => {
 
     console.log(`[Webhook] Processando mensagem de ${senderPhone}: "${messageText}"`);
 
+    // Verifica se é comando para listar lembretes
+    if (isListRemindersMessage(messageText)) {
+      console.log(`[Webhook] Comando #lembrar detectado de ${senderPhone}`);
+      const listResult = await processListRemindersCommand(senderPhone);
+      await sendResponseToUser(senderPhone, listResult.response);
+      return;
+    }
+
+    // Se a mensagem contém apenas "#lembrete" sem mais nada, envia ajuda
+    if (messageText.trim().toLowerCase() === '#lembrete') {
+      const helpMessage = generateHelpMessage();
+      await sendResponseToUser(senderPhone, helpMessage);
+      return;
+    }
+
     // Converte para o formato esperado pelo messageParser
     const webhookMessage = {
       from: senderPhone,
@@ -86,12 +106,6 @@ export const handleEvolutionWebhook = async (req: Request, res: Response) => {
     // Se processou com sucesso ou falhou com erro de formato, responde ao usuário
     if (result.success || result.response.includes('❌')) {
       await sendResponseToUser(senderPhone, result.response);
-    }
-
-    // Se a mensagem contém apenas "#lembrete" sem mais nada, envia ajuda
-    if (messageText.trim().toLowerCase() === '#lembrete') {
-      const helpMessage = generateHelpMessage();
-      await sendResponseToUser(senderPhone, helpMessage);
     }
 
   } catch (error) {
@@ -209,6 +223,28 @@ export const testWebhook = async (req: Request, res: Response) => {
       });
     }
 
+    // Verifica se é comando para listar lembretes
+    if (isListRemindersMessage(message)) {
+      const listResult = await processListRemindersCommand(phone);
+      return res.json({
+        success: true,
+        result: listResult
+      });
+    }
+
+    // Se é comando de ajuda
+    if (message.trim().toLowerCase() === '#lembrete') {
+      const helpMessage = generateHelpMessage();
+      return res.json({
+        success: true,
+        result: {
+          success: true,
+          response: helpMessage
+        }
+      });
+    }
+
+    // Processamento normal de lembretes
     const webhookMessage = {
       from: phone,
       text: {

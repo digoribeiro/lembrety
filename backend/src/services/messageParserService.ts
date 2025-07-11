@@ -1,4 +1,5 @@
-import { createReminder } from "./reminderService";
+import { createReminder, getPendingRemindersByPhone } from "./reminderService";
+import { Reminder } from "@prisma/client";
 
 interface ParsedReminder {
   phone: string;
@@ -20,6 +21,11 @@ interface WebhookMessage {
  */
 export function isReminderMessage(messageBody: string): boolean {
   return messageBody.toLowerCase().includes("#lembrete");
+}
+
+// Detecta se uma mensagem contém o comando #lembrar (para listar lembretes)
+export function isListRemindersMessage(messageBody: string): boolean {
+  return messageBody.toLowerCase().trim() === "#lembrar";
 }
 
 /**
@@ -353,13 +359,97 @@ Você receberá uma mensagem no horário agendado.`,
 }
 
 /**
+ * Processa comando #lembrar e retorna lista de lembretes pendentes
+ */
+export async function processListRemindersCommand(
+  senderPhone: string
+): Promise<{ success: boolean; response: string }> {
+  try {
+    const pendingReminders = await getPendingRemindersByPhone(senderPhone);
+
+    if (pendingReminders.length === 0) {
+      return {
+        success: true,
+        response: `📝 *Seus Lembretes*
+
+🎉 Você não tem lembretes pendentes!
+
+Para criar um novo lembrete, use:
+*#lembrete [hora] [mensagem]*
+
+Exemplo: #lembrete 15:30 Reunião importante`,
+      };
+    }
+
+    const formattedList = formatRemindersList(pendingReminders);
+
+    return {
+      success: true,
+      response: `📝 *Seus Lembretes Pendentes*
+
+${formattedList}
+
+💡 *Dicas:*
+• Para criar: *#lembrete [hora] [mensagem]*
+• Para ajuda: *#lembrete*`,
+    };
+  } catch (error) {
+    console.error("Erro ao buscar lembretes:", error);
+
+    return {
+      success: false,
+      response:
+        "❌ Erro ao buscar seus lembretes. Tente novamente em alguns minutos.",
+    };
+  }
+}
+
+/**
+ * Formata lista de lembretes para exibição no WhatsApp
+ */
+function formatRemindersList(reminders: Reminder[]): string {
+  return reminders
+    .map((reminder, index) => {
+      const date = reminder.scheduledAt;
+      const formattedDate = date.toLocaleString("pt-BR", {
+        timeZone: "UTC",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      // Remove o prefixo "🔔 *Lembrete:* " se existir para mostrar apenas a mensagem original
+      let cleanMessage = reminder.message;
+      if (cleanMessage.startsWith("🔔 *Lembrete:* ")) {
+        cleanMessage = cleanMessage.replace("🔔 *Lembrete:* ", "");
+      }
+
+      // Trunca mensagem se for muito longa
+      const maxLength = 50;
+      const truncatedMessage =
+        cleanMessage.length > maxLength
+          ? cleanMessage.substring(0, maxLength) + "..."
+          : cleanMessage;
+
+      return `${index + 1}. 📅 ${formattedDate}
+   💬 ${truncatedMessage}`;
+    })
+    .join("\n\n");
+}
+
+/**
  * Gera mensagem de ajuda sobre como usar o comando #lembrete
  */
 export function generateHelpMessage(): string {
-  return `🤖 *Ajuda - Comando #lembrete*
+  return `🤖 *Ajuda - Comandos*
 
-Para criar um lembrete, use o formato:
+📝 *Para criar um lembrete:*
 *#lembrete [quando] [hora] [mensagem]*
+
+📋 *Para listar lembretes:*
+*#lembrar*
 
 📅 *Exemplos de uso:*
 
@@ -380,7 +470,7 @@ Para criar um lembrete, use o formato:
 • Use horário no formato 24h (ex: 14:30)
 • Datas no formato DD/MM ou DD/MM/AAAA
 • Se o horário já passou hoje, será agendado para amanhã
-• Mensagem pode ter qualquer tamanho
+• Para ver seus lembretes: *#lembrar*
 
 ❓ *Dúvidas?* Envie uma mensagem com *#lembrete* para ver esta ajuda novamente.`;
 }

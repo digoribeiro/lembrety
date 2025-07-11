@@ -59,6 +59,25 @@ export const createReminder = async (reminderData: {
   );
 };
 
+// Função para buscar lembretes pendentes de um usuário
+export const getPendingRemindersByPhone = async (phone: string) => {
+  const formattedPhone = formatPhoneNumber(phone);
+  
+  const pendingReminders = await prisma.reminder.findMany({
+    where: {
+      phone: formattedPhone,
+      isSent: false,
+      OR: [{ retryCount: { lt: 3 } }, { retryCount: null }],
+    },
+    orderBy: {
+      scheduledAt: 'asc',
+    },
+    take: 20, // Limita a 20 lembretes para não sobrecarregar o WhatsApp
+  });
+
+  return pendingReminders;
+};
+
 // Função para testar conexão com a Evolution API
 export const testEvolutionConnection = async () => {
   try {
