@@ -3,7 +3,10 @@ import {
   processWebhookMessage, 
   generateHelpMessage,
   isListRemindersMessage,
-  processListRemindersCommand
+  processListRemindersCommand,
+  isCancelReminderMessage,
+  parseCancelReminderNumber,
+  processCancelReminderCommand
 } from '../services/messageParserService';
 import { sendWhatsAppMessage } from '../services/evolutionService';
 
@@ -74,6 +77,22 @@ export const handleEvolutionWebhook = async (req: Request, res: Response) => {
     }
 
     console.log(`[Webhook] Processando mensagem de ${senderPhone}: "${messageText}"`);
+
+    // Verifica se é comando para cancelar lembrete
+    if (isCancelReminderMessage(messageText)) {
+      console.log(`[Webhook] Comando #cancelar detectado de ${senderPhone}: "${messageText}"`);
+      const reminderNumber = parseCancelReminderNumber(messageText);
+      
+      if (reminderNumber) {
+        const cancelResult = await processCancelReminderCommand(senderPhone, reminderNumber);
+        await sendResponseToUser(senderPhone, cancelResult.response);
+      } else {
+        await sendResponseToUser(senderPhone, 
+          '❌ Formato inválido. Use: *#cancelar [número]*\n\nExemplo: #cancelar 1'
+        );
+      }
+      return;
+    }
 
     // Verifica se é comando para listar lembretes
     if (isListRemindersMessage(messageText)) {
@@ -221,6 +240,27 @@ export const testWebhook = async (req: Request, res: Response) => {
       return res.status(400).json({
         error: 'phone e message são obrigatórios'
       });
+    }
+
+    // Verifica se é comando para cancelar lembrete
+    if (isCancelReminderMessage(message)) {
+      const reminderNumber = parseCancelReminderNumber(message);
+      
+      if (reminderNumber) {
+        const cancelResult = await processCancelReminderCommand(phone, reminderNumber);
+        return res.json({
+          success: true,
+          result: cancelResult
+        });
+      } else {
+        return res.json({
+          success: false,
+          result: {
+            success: false,
+            response: '❌ Formato inválido. Use: *#cancelar [número]*\n\nExemplo: #cancelar 1'
+          }
+        });
+      }
     }
 
     // Verifica se é comando para listar lembretes

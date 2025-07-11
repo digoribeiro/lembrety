@@ -1,4 +1,4 @@
-import { createReminder, getPendingRemindersByPhone } from "./reminderService";
+import { createReminder, getPendingRemindersByPhone, cancelReminderById } from "./reminderService";
 import { Reminder } from "@prisma/client";
 
 interface ParsedReminder {
@@ -26,6 +26,25 @@ export function isReminderMessage(messageBody: string): boolean {
 // Detecta se uma mensagem contém o comando #lembrar (para listar lembretes)
 export function isListRemindersMessage(messageBody: string): boolean {
   return messageBody.toLowerCase().trim() === "#lembrar";
+}
+
+/**
+ * Detecta se uma mensagem contém o comando #cancelar [número]
+ */
+export function isCancelReminderMessage(messageBody: string): boolean {
+  return /^#cancelar\s+\d+$/i.test(messageBody.trim());
+}
+
+/**
+ * Extrai o número do lembrete a ser cancelado do comando #cancelar
+ */
+export function parseCancelReminderNumber(messageBody: string): number | null {
+  const match = messageBody.trim().match(/^#cancelar\s+(\d+)$/i);
+  if (match) {
+    const number = parseInt(match[1]);
+    return number > 0 ? number : null; // Apenas números positivos
+  }
+  return null;
 }
 
 /**
@@ -359,6 +378,95 @@ Você receberá uma mensagem no horário agendado.`,
 }
 
 /**
+ * Processa comando #cancelar [número] e cancela o lembrete especificado
+ */
+export async function processCancelReminderCommand(
+  senderPhone: string,
+  reminderNumber: number
+): Promise<{ success: boolean; response: string }> {
+  try {
+    // Busca lembretes pendentes na mesma ordem da listagem
+    const pendingReminders = await getPendingRemindersByPhone(senderPhone);
+
+    if (pendingReminders.length === 0) {
+      return {
+        success: false,
+        response: `📝 *Cancelar Lembrete*
+
+❌ Você não tem lembretes pendentes para cancelar.
+
+Para ver seus lembretes: *#lembrar*
+Para criar um novo: *#lembrete [hora] [mensagem]*`,
+      };
+    }
+
+    // Verifica se o número está dentro do range
+    if (reminderNumber < 1 || reminderNumber > pendingReminders.length) {
+      return {
+        success: false,
+        response: `📝 *Cancelar Lembrete*
+
+❌ Número inválido. Você tem ${pendingReminders.length} lembrete(s) pendente(s).
+
+Para ver seus lembretes: *#lembrar*
+Para cancelar: *#cancelar [número]*
+
+Exemplo: #cancelar 1`,
+      };
+    }
+
+    // Pega o lembrete a ser cancelado (índice 0-based)
+    const reminderToCancel = pendingReminders[reminderNumber - 1];
+
+    // Cancela o lembrete marcando como enviado com erro específico
+    await cancelReminderById(reminderToCancel.id);
+
+    // Formata a mensagem do lembrete cancelado
+    let cleanMessage = reminderToCancel.message;
+    if (cleanMessage.startsWith("🔔 *Lembrete:* ")) {
+      cleanMessage = cleanMessage.replace("🔔 *Lembrete:* ", "");
+    }
+
+    const maxLength = 60;
+    const truncatedMessage =
+      cleanMessage.length > maxLength
+        ? cleanMessage.substring(0, maxLength) + "..."
+        : cleanMessage;
+
+    const formattedDate = reminderToCancel.scheduledAt.toLocaleString("pt-BR", {
+      timeZone: "UTC",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    return {
+      success: true,
+      response: `✅ *Lembrete Cancelado*
+
+🗑️ Lembrete #${reminderNumber} cancelado com sucesso:
+
+📅 ${formattedDate}
+💬 ${truncatedMessage}
+
+💡 *Dicas:*
+• Para ver lembretes: *#lembrar*
+• Para criar novo: *#lembrete [hora] [mensagem]*`,
+    };
+  } catch (error) {
+    console.error("Erro ao cancelar lembrete:", error);
+
+    return {
+      success: false,
+      response:
+        "❌ Erro ao cancelar lembrete. Tente novamente em alguns minutos.",
+    };
+  }
+}
+
+/**
  * Processa comando #lembrar e retorna lista de lembretes pendentes
  */
 export async function processListRemindersCommand(
@@ -391,6 +499,7 @@ ${formattedList}
 
 💡 *Dicas:*
 • Para criar: *#lembrete [hora] [mensagem]*
+• Para cancelar: *#cancelar [número]*
 • Para ajuda: *#lembrete*`,
     };
   } catch (error) {
@@ -451,26 +560,26 @@ export function generateHelpMessage(): string {
 📋 *Para listar lembretes:*
 *#lembrar*
 
+🗑️ *Para cancelar um lembrete:*
+*#cancelar [número]*
+
 📅 *Exemplos de uso:*
 
-⏰ *Hoje:*
+⏰ *Criar lembretes:*
 • #lembrete 15:30 Reunião com cliente
 • #lembrete 09:00 Tomar remédio
-
-📆 *Data específica:*
-• #lembrete 25/12 20:00 Ceia de Natal
-• #lembrete 15/01/2024 14:30 Consulta médica
-
-🗓️ *Dias da semana:*
-• #lembrete segunda 09:00 Reunião de equipe
-• #lembrete sexta 18:00 Happy hour
 • #lembrete amanhã 07:00 Academia
+
+📋 *Gerenciar lembretes:*
+• #lembrar (lista todos)
+• #cancelar 1 (cancela o primeiro)
+• #cancelar 3 (cancela o terceiro)
 
 ⚡ *Dicas:*
 • Use horário no formato 24h (ex: 14:30)
 • Datas no formato DD/MM ou DD/MM/AAAA
 • Se o horário já passou hoje, será agendado para amanhã
-• Para ver seus lembretes: *#lembrar*
+• Os números para cancelar correspondem à ordem em *#lembrar*
 
 ❓ *Dúvidas?* Envie uma mensagem com *#lembrete* para ver esta ajuda novamente.`;
 }

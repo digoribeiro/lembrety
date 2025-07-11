@@ -78,6 +78,21 @@ export const getPendingRemindersByPhone = async (phone: string) => {
   return pendingReminders;
 };
 
+// Função para cancelar um lembrete por ID
+export const cancelReminderById = async (reminderId: string) => {
+  return await prisma.reminder.update({
+    where: {
+      id: reminderId,
+    },
+    data: {
+      isSent: true,
+      sentAt: new Date(),
+      lastError: "Cancelado pelo usuário",
+      retryCount: 0,
+    },
+  });
+};
+
 // Função para testar conexão com a Evolution API
 export const testEvolutionConnection = async () => {
   try {
