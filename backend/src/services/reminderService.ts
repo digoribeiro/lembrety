@@ -11,13 +11,14 @@ export const scheduleReminderService = async (
   phone: string,
   scheduledAt: Date
 ) => {
-  // Verificar formato do número (deve ser internacional: 5511999999999)
-  const formattedPhone = formatPhoneNumber(phone);
+  const prefixedMessage = message.startsWith("🔔 *Lembrete:*")
+    ? message
+    : `🔔 *Lembrete:* ${message}`;
 
   const reminder = await prisma.reminder.create({
     data: {
-      message,
-      phone: formattedPhone,
+      message: prefixedMessage,
+      phone: formatPhoneNumber(phone),
       scheduledAt,
     },
   });
@@ -28,18 +29,20 @@ export const scheduleReminderService = async (
 // Função para formatar números de telefone
 const formatPhoneNumber = (phone: string): string => {
   // Remove todos os não-dígitos
-  let formatted = phone.replace(/\D/g, '');
-  
+  let formatted = phone.replace(/\D/g, "");
+
   // Adiciona código do país se necessário
-  if (!formatted.startsWith('55') && formatted.length === 11) {
-    formatted = '55' + formatted;
+  if (!formatted.startsWith("55") && formatted.length === 11) {
+    formatted = "55" + formatted;
   }
-  
+
   // Verifica se o número tem comprimento válido
   if (formatted.length < 12 || formatted.length > 14) {
-    throw new Error('Número de telefone inválido! Use o formato: 5511999999999');
+    throw new Error(
+      "Número de telefone inválido! Use o formato: 5511999999999"
+    );
   }
-  
+
   return formatted;
 };
 
