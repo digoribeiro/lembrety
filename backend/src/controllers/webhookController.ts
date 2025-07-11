@@ -9,7 +9,10 @@ import {
   processCancelReminderCommand,
   isEditReminderMessage,
   parseEditReminderCommand,
-  processEditReminderCommand
+  processEditReminderCommand,
+  isRescheduleReminderMessage,
+  parseRescheduleReminderCommand,
+  processRescheduleReminderCommand
 } from '../services/messageParserService';
 import { sendWhatsAppMessage } from '../services/evolutionService';
 
@@ -92,6 +95,22 @@ export const handleEvolutionWebhook = async (req: Request, res: Response) => {
       } else {
         await sendResponseToUser(senderPhone, 
           '❌ Formato inválido. Use: *#editar [número] [nova mensagem]*\n\nExemplo: #editar 1 Nova mensagem do lembrete'
+        );
+      }
+      return;
+    }
+
+    // Verifica se é comando para reagendar lembrete
+    if (isRescheduleReminderMessage(messageText)) {
+      console.log(`[Webhook] Comando #reagendar detectado de ${senderPhone}: "${messageText}"`);
+      const { number: reminderNumber, scheduledAt, wasRescheduled } = parseRescheduleReminderCommand(messageText);
+      
+      if (reminderNumber && scheduledAt) {
+        const rescheduleResult = await processRescheduleReminderCommand(senderPhone, reminderNumber, scheduledAt, wasRescheduled);
+        await sendResponseToUser(senderPhone, rescheduleResult.response);
+      } else {
+        await sendResponseToUser(senderPhone, 
+          '❌ Formato inválido. Use: *#reagendar [número] [nova data/hora]*\n\nExemplos:\n• #reagendar 1 15:30\n• #reagendar 1 amanhã 14:00\n• #reagendar 1 25/12 20:00'
         );
       }
       return;
@@ -277,6 +296,27 @@ export const testWebhook = async (req: Request, res: Response) => {
           result: {
             success: false,
             response: '❌ Formato inválido. Use: *#editar [número] [nova mensagem]*\n\nExemplo: #editar 1 Nova mensagem'
+          }
+        });
+      }
+    }
+
+    // Verifica se é comando para reagendar lembrete
+    if (isRescheduleReminderMessage(message)) {
+      const { number: reminderNumber, scheduledAt, wasRescheduled } = parseRescheduleReminderCommand(message);
+      
+      if (reminderNumber && scheduledAt) {
+        const rescheduleResult = await processRescheduleReminderCommand(phone, reminderNumber, scheduledAt, wasRescheduled);
+        return res.json({
+          success: true,
+          result: rescheduleResult
+        });
+      } else {
+        return res.json({
+          success: false,
+          result: {
+            success: false,
+            response: '❌ Formato inválido. Use: *#reagendar [número] [nova data/hora]*\n\nExemplos:\n• #reagendar 1 15:30\n• #reagendar 1 amanhã 14:00\n• #reagendar 1 25/12 20:00'
           }
         });
       }

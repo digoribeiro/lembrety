@@ -1,4 +1,4 @@
-import { createReminder, getPendingRemindersByPhone, cancelReminderById, editReminderById } from "./reminderService";
+import { createReminder, getPendingRemindersByPhone, cancelReminderById, editReminderById, rescheduleReminderById } from "./reminderService";
 import { Reminder } from "@prisma/client";
 
 interface ParsedReminder {
@@ -43,6 +43,13 @@ export function isEditReminderMessage(messageBody: string): boolean {
 }
 
 /**
+ * Detecta se uma mensagem contém o comando #reagendar [número] [nova_data/hora]
+ */
+export function isRescheduleReminderMessage(messageBody: string): boolean {
+  return /^#reagendar\s+\d+\s+.+$/i.test(messageBody.trim());
+}
+
+/**
  * Extrai o número do lembrete e se há confirmação do comando #cancelar
  */
 export function parseCancelReminderCommand(messageBody: string): { number: number | null; confirmed: boolean } {
@@ -83,6 +90,42 @@ export function parseEditReminderCommand(messageBody: string): { number: number 
   }
   
   return { number: null, newMessage: null };
+}
+
+/**
+ * Extrai o número do lembrete e nova data/hora do comando #reagendar
+ */
+export function parseRescheduleReminderCommand(messageBody: string): { 
+  number: number | null; 
+  scheduledAt: Date | null; 
+  wasRescheduled?: boolean 
+} {
+  const match = messageBody.trim().match(/^#reagendar\s+(\d+)\s+(.+)$/i);
+  
+  if (match) {
+    const number = parseInt(match[1]);
+    const dateTimeString = match[2].trim();
+    
+    // Se number é inválido (0 ou negativo), retorna null
+    if (number <= 0) {
+      return { number: null, scheduledAt: null };
+    }
+    
+    // Reutiliza a lógica de parsing de data/hora do parseReminderMessage
+    // Criamos uma mensagem temporária para usar a mesma lógica
+    const tempMessage = `#lembrete ${dateTimeString} temp`;
+    const tempResult = parseReminderMessage(tempMessage, '5500000000000');
+    
+    if (tempResult && tempResult.scheduledAt) {
+      return {
+        number,
+        scheduledAt: tempResult.scheduledAt,
+        wasRescheduled: (tempResult as any)._wasRescheduled
+      };
+    }
+  }
+  
+  return { number: null, scheduledAt: null };
 }
 
 /**
@@ -611,6 +654,7 @@ ${truncatedNewMessage}
 💡 *Dicas:*
 • Para ver lembretes: *#lembrar*
 • Para cancelar: *#cancelar [número]*
+• Para reagendar: *#reagendar [número] [nova data/hora]*
 • Para criar novo: *#lembrete [hora] [mensagem]*`,
     };
   } catch (error) {
@@ -620,6 +664,119 @@ ${truncatedNewMessage}
       success: false,
       response:
         "❌ Erro ao editar lembrete. Tente novamente em alguns minutos.",
+    };
+  }
+}
+
+/**
+ * Processa comando #reagendar [número] [nova data/hora]
+ */
+export async function processRescheduleReminderCommand(
+  senderPhone: string,
+  reminderNumber: number,
+  newScheduledAt: Date,
+  wasRescheduled?: boolean
+): Promise<{ success: boolean; response: string }> {
+  try {
+    // Busca lembretes pendentes na mesma ordem da listagem
+    const pendingReminders = await getPendingRemindersByPhone(senderPhone);
+
+    if (pendingReminders.length === 0) {
+      return {
+        success: false,
+        response: `⏰ *Reagendar Lembrete*
+
+❌ Você não tem lembretes pendentes para reagendar.
+
+Para ver seus lembretes: *#lembrar*
+Para criar um novo: *#lembrete [hora] [mensagem]*`,
+      };
+    }
+
+    // Verifica se o número está dentro do range
+    if (reminderNumber < 1 || reminderNumber > pendingReminders.length) {
+      return {
+        success: false,
+        response: `⏰ *Reagendar Lembrete*
+
+❌ Número inválido. Você tem ${pendingReminders.length} lembrete(s) pendente(s).
+
+Para ver seus lembretes: *#lembrar*
+Para reagendar: *#reagendar [número] [nova data/hora]*
+
+Exemplos:
+• #reagendar 1 15:30
+• #reagendar 1 amanhã 14:00
+• #reagendar 1 25/12 20:00`,
+      };
+    }
+
+    // Pega o lembrete a ser reagendado (índice 0-based)
+    const reminderToReschedule = pendingReminders[reminderNumber - 1];
+
+    // Formata datas para exibição
+    const formatDate = (date: Date): string => {
+      return date.toLocaleString("pt-BR", {
+        timeZone: "UTC",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    };
+
+    const oldDate = formatDate(reminderToReschedule.scheduledAt);
+    const newDate = formatDate(newScheduledAt);
+
+    // Obter mensagem para exibição
+    let message = reminderToReschedule.message;
+    if (message.startsWith("🔔 *Lembrete:* ")) {
+      message = message.replace("🔔 *Lembrete:* ", "");
+    }
+
+    // Trunca mensagem se for muito longa
+    const maxLength = 40;
+    const truncatedMessage = message.length > maxLength 
+      ? message.substring(0, maxLength) + "..." 
+      : message;
+
+    // Reagenda o lembrete no banco de dados
+    await rescheduleReminderById(reminderToReschedule.id, newScheduledAt);
+
+    // Nota sobre reagendamento automático
+    const rescheduledNote = wasRescheduled
+      ? "\n\n⏰ *Horário já passou hoje, agendado para amanhã.*"
+      : "";
+
+    return {
+      success: true,
+      response: `✅ *Lembrete Reagendado*
+
+📝 Lembrete #${reminderNumber} reagendado com sucesso:
+
+💬 *Mensagem:*
+${truncatedMessage}
+
+⏰ *Data anterior:*
+📅 ${oldDate}
+
+🆕 *Nova data:*
+📅 ${newDate}${rescheduledNote}
+
+💡 *Dicas:*
+• Para ver lembretes: *#lembrar*
+• Para cancelar: *#cancelar [número]*
+• Para editar texto: *#editar [número] [nova mensagem]*
+• Para reagendar: *#reagendar [número] [nova data/hora]*`,
+    };
+  } catch (error) {
+    console.error("Erro ao reagendar lembrete:", error);
+
+    return {
+      success: false,
+      response:
+        "❌ Erro ao reagendar lembrete. Tente novamente em alguns minutos.",
     };
   }
 }
@@ -658,6 +815,8 @@ ${formattedList}
 💡 *Dicas:*
 • Para criar: *#lembrete [hora] [mensagem]*
 • Para cancelar: *#cancelar [número]* (pede confirmação)
+• Para editar: *#editar [número] [nova mensagem]*
+• Para reagendar: *#reagendar [número] [nova data/hora]*
 • Para ajuda: *#lembrete*`,
     };
   } catch (error) {
@@ -724,6 +883,9 @@ export function generateHelpMessage(): string {
 ✏️ *Para editar um lembrete:*
 *#editar [número] [nova mensagem]*
 
+⏰ *Para reagendar um lembrete:*
+*#reagendar [número] [nova data/hora]*
+
 📅 *Exemplos de uso:*
 
 ⏰ *Criar lembretes:*
@@ -731,11 +893,17 @@ export function generateHelpMessage(): string {
 • #lembrete 09:00 Tomar remédio
 • #lembrete amanhã 07:00 Academia
 
+📅 *Reagendar lembretes:*
+• #reagendar 1 16:00 (nova hora)
+• #reagendar 2 amanhã 14:00 (nova data)
+• #reagendar 3 25/12 20:00 (data específica)
+
 📋 *Gerenciar lembretes:*
 • #lembrar (lista todos)
 • #cancelar 1 (pede confirmação)
 • #cancelar 1 confirmar (cancela definitivamente)
 • #editar 1 Nova mensagem (altera o texto)
+• #reagendar 1 15:30 (altera data/hora)
 
 ⚡ *Dicas:*
 • Use horário no formato 24h (ex: 14:30)
@@ -743,6 +911,7 @@ export function generateHelpMessage(): string {
 • Se o horário já passou hoje, será agendado para amanhã
 • Cancelamentos pedem confirmação para evitar acidentes
 • Os números correspondem à ordem em *#lembrar*
+• Use *#reagendar* para alterar data/hora sem mudar a mensagem
 
 ❓ *Dúvidas?* Envie uma mensagem com *#lembrete* para ver esta ajuda novamente.`;
 }

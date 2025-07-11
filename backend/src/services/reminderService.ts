@@ -110,6 +110,18 @@ export const editReminderById = async (reminderId: string, newMessage: string) =
   });
 };
 
+// Função para reagendar (alterar data/hora) de um lembrete por ID
+export const rescheduleReminderById = async (reminderId: string, newScheduledAt: Date) => {
+  return await prisma.reminder.update({
+    where: {
+      id: reminderId,
+    },
+    data: {
+      scheduledAt: newScheduledAt,
+    },
+  });
+};
+
 // Função para testar conexão com a Evolution API
 export const testEvolutionConnection = async () => {
   try {

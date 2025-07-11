@@ -17,6 +17,9 @@ jest.mock('../../../src/services/messageParserService', () => ({
   isEditReminderMessage: jest.fn(),
   parseEditReminderCommand: jest.fn(),
   processEditReminderCommand: jest.fn(),
+  isRescheduleReminderMessage: jest.fn(),
+  parseRescheduleReminderCommand: jest.fn(),
+  processRescheduleReminderCommand: jest.fn(),
 }));
 
 jest.mock('../../../src/services/evolutionService', () => ({
@@ -33,7 +36,10 @@ import {
   processCancelReminderCommand,
   isEditReminderMessage,
   parseEditReminderCommand,
-  processEditReminderCommand
+  processEditReminderCommand,
+  isRescheduleReminderMessage,
+  parseRescheduleReminderCommand,
+  processRescheduleReminderCommand
 } from '../../../src/services/messageParserService';
 
 import { sendWhatsAppMessage } from '../../../src/services/evolutionService';
@@ -48,6 +54,9 @@ const mockProcessCancelReminderCommand = processCancelReminderCommand as jest.Mo
 const mockIsEditReminderMessage = isEditReminderMessage as jest.MockedFunction<typeof isEditReminderMessage>;
 const mockParseEditReminderCommand = parseEditReminderCommand as jest.MockedFunction<typeof parseEditReminderCommand>;
 const mockProcessEditReminderCommand = processEditReminderCommand as jest.MockedFunction<typeof processEditReminderCommand>;
+const mockIsRescheduleReminderMessage = isRescheduleReminderMessage as jest.MockedFunction<typeof isRescheduleReminderMessage>;
+const mockParseRescheduleReminderCommand = parseRescheduleReminderCommand as jest.MockedFunction<typeof parseRescheduleReminderCommand>;
+const mockProcessRescheduleReminderCommand = processRescheduleReminderCommand as jest.MockedFunction<typeof processRescheduleReminderCommand>;
 const mockSendWhatsAppMessage = sendWhatsAppMessage as jest.MockedFunction<typeof sendWhatsAppMessage>;
 
 describe('WebhookController', () => {
@@ -101,6 +110,7 @@ describe('WebhookController', () => {
       mockIsEditReminderMessage.mockReturnValue(false);
       mockIsCancelReminderMessage.mockReturnValue(false);
       mockIsListRemindersMessage.mockReturnValue(false);
+      mockIsRescheduleReminderMessage.mockReturnValue(false);
     });
 
     it('deve responder com status 200 imediatamente', async () => {

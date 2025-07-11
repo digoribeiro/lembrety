@@ -11,6 +11,9 @@ import {
   isEditReminderMessage,
   parseEditReminderCommand,
   processEditReminderCommand,
+  isRescheduleReminderMessage,
+  parseRescheduleReminderCommand,
+  processRescheduleReminderCommand,
 } from '../../../src/services/messageParserService';
 
 // Mock das dependências
@@ -19,14 +22,16 @@ jest.mock('../../../src/services/reminderService', () => ({
   cancelReminderById: jest.fn(),
   createReminder: jest.fn(),
   editReminderById: jest.fn(),
+  rescheduleReminderById: jest.fn(),
 }));
 
-import { getPendingRemindersByPhone, cancelReminderById, createReminder, editReminderById } from '../../../src/services/reminderService';
+import { getPendingRemindersByPhone, cancelReminderById, createReminder, editReminderById, rescheduleReminderById } from '../../../src/services/reminderService';
 
 const mockGetPendingRemindersByPhone = getPendingRemindersByPhone as jest.MockedFunction<typeof getPendingRemindersByPhone>;
 const mockCancelReminderById = cancelReminderById as jest.MockedFunction<typeof cancelReminderById>;
 const mockCreateReminder = createReminder as jest.MockedFunction<typeof createReminder>;
 const mockEditReminderById = editReminderById as jest.MockedFunction<typeof editReminderById>;
+const mockRescheduleReminderById = rescheduleReminderById as jest.MockedFunction<typeof rescheduleReminderById>;
 
 describe('MessageParserService', () => {
   beforeEach(() => {
@@ -521,6 +526,242 @@ describe('MessageParserService', () => {
       expect(result.response).toContain('Ligar para médico'); // Mensagem anterior
       expect(result.response).toContain('Ligar para dentista'); // Nova mensagem
       expect(mockEditReminderById).toHaveBeenCalledWith('2', 'Ligar para dentista');
+    });
+  });
+
+  describe('isRescheduleReminderMessage', () => {
+    it('deve detectar comando #reagendar válido', () => {
+      expect(isRescheduleReminderMessage('#reagendar 1 15:30')).toBe(true);
+      expect(isRescheduleReminderMessage('#reagendar 10 amanhã 14:00')).toBe(true);
+      expect(isRescheduleReminderMessage('#REAGENDAR 5 25/12 20:00')).toBe(true);
+      expect(isRescheduleReminderMessage('  #reagendar 3 16:00  ')).toBe(true);
+    });
+
+    it('deve rejeitar comandos #reagendar inválidos', () => {
+      expect(isRescheduleReminderMessage('#reagendar')).toBe(false);
+      expect(isRescheduleReminderMessage('#reagendar 1')).toBe(false);
+      expect(isRescheduleReminderMessage('#reagendar abc 15:30')).toBe(false);
+      expect(isRescheduleReminderMessage('#reagendar -1 15:30')).toBe(false);
+      expect(isRescheduleReminderMessage('reagendar 1 15:30')).toBe(false);
+    });
+  });
+
+  describe('parseRescheduleReminderCommand', () => {
+    it('deve fazer parse de comando com nova hora', () => {
+      const result = parseRescheduleReminderCommand('#reagendar 1 15:30');
+      
+      expect(result.number).toBe(1);
+      expect(result.scheduledAt).toBeInstanceOf(Date);
+      expect(result.scheduledAt?.getUTCHours()).toBe(15);
+      expect(result.scheduledAt?.getUTCMinutes()).toBe(30);
+    });
+
+    it('deve fazer parse de comando com nova data', () => {
+      const result = parseRescheduleReminderCommand('#reagendar 2 amanhã 14:00');
+      
+      expect(result.number).toBe(2);
+      expect(result.scheduledAt).toBeInstanceOf(Date);
+      expect(result.scheduledAt?.getUTCHours()).toBe(14);
+    });
+
+    it('deve fazer parse de data específica', () => {
+      const result = parseRescheduleReminderCommand('#reagendar 3 15/07 16:00');
+      
+      expect(result.number).toBe(3);
+      expect(result.scheduledAt).toBeInstanceOf(Date);
+      expect(result.scheduledAt?.getUTCDate()).toBe(15);
+      expect(result.scheduledAt?.getUTCMonth()).toBe(6); // Julho = 6
+      expect(result.scheduledAt?.getUTCHours()).toBe(16);
+    });
+
+    it('deve ser case insensitive', () => {
+      const result = parseRescheduleReminderCommand('#REAGENDAR 1 15:30');
+      expect(result.number).toBe(1);
+      expect(result.scheduledAt).toBeInstanceOf(Date);
+    });
+
+    it('deve retornar null para comandos inválidos', () => {
+      expect(parseRescheduleReminderCommand('#reagendar')).toEqual({ number: null, scheduledAt: null });
+      expect(parseRescheduleReminderCommand('#reagendar 1')).toEqual({ number: null, scheduledAt: null });
+      expect(parseRescheduleReminderCommand('#reagendar abc 15:30')).toEqual({ number: null, scheduledAt: null });
+      expect(parseRescheduleReminderCommand('#reagendar 0 15:30')).toEqual({ number: null, scheduledAt: null });
+    });
+
+    it('deve ignorar espaços extras', () => {
+      const result = parseRescheduleReminderCommand('  #reagendar   1   15:30   ');
+      expect(result.number).toBe(1);
+      expect(result.scheduledAt).toBeInstanceOf(Date);
+    });
+  });
+
+  describe('processRescheduleReminderCommand', () => {
+    const senderPhone = '5521964660801';
+    const mockReminders = [
+      {
+        id: '1',
+        message: '🔔 *Lembrete:* Reunião importante',
+        scheduledAt: new Date('2025-07-11T14:00:00.000Z'),
+        phone: senderPhone,
+        isSent: false,
+        createdAt: new Date(),
+        sentAt: null,
+        retryCount: 0,
+        lastError: null,
+        source: 'api'
+      },
+      {
+        id: '2',
+        message: '🔔 *Lembrete:* Ligar para médico',
+        scheduledAt: new Date('2025-07-12T09:00:00.000Z'),
+        phone: senderPhone,
+        isSent: false,
+        createdAt: new Date(),
+        sentAt: null,
+        retryCount: 0,
+        lastError: null,
+        source: 'api'
+      }
+    ];
+
+    beforeEach(() => {
+      mockGetPendingRemindersByPhone.mockClear();
+      mockRescheduleReminderById.mockClear();
+    });
+
+    it('deve reagendar lembrete com sucesso', async () => {
+      mockGetPendingRemindersByPhone.mockResolvedValue(mockReminders);
+      mockRescheduleReminderById.mockResolvedValue({
+        ...mockReminders[0],
+        scheduledAt: new Date('2025-07-11T16:00:00.000Z')
+      });
+
+      const newScheduledAt = new Date('2025-07-11T16:00:00.000Z');
+      const result = await processRescheduleReminderCommand(senderPhone, 1, newScheduledAt);
+
+      expect(result.success).toBe(true);
+      expect(result.response).toContain('✅ *Lembrete Reagendado*');
+      expect(result.response).toContain('Lembrete #1 reagendado com sucesso');
+      expect(result.response).toContain('Reunião importante');
+      expect(mockRescheduleReminderById).toHaveBeenCalledWith('1', newScheduledAt);
+    });
+
+    it('deve tratar número inválido (muito alto)', async () => {
+      mockGetPendingRemindersByPhone.mockResolvedValue(mockReminders);
+
+      const newScheduledAt = new Date('2025-07-11T16:00:00.000Z');
+      const result = await processRescheduleReminderCommand(senderPhone, 5, newScheduledAt);
+
+      expect(result.success).toBe(false);
+      expect(result.response).toContain('❌ Número inválido');
+      expect(result.response).toContain('Você tem 2 lembrete(s) pendente(s)');
+      expect(mockRescheduleReminderById).not.toHaveBeenCalled();
+    });
+
+    it('deve tratar número inválido (menor que 1)', async () => {
+      mockGetPendingRemindersByPhone.mockResolvedValue(mockReminders);
+
+      const newScheduledAt = new Date('2025-07-11T16:00:00.000Z');
+      const result = await processRescheduleReminderCommand(senderPhone, 0, newScheduledAt);
+
+      expect(result.success).toBe(false);
+      expect(result.response).toContain('❌ Número inválido');
+    });
+
+    it('deve tratar usuário sem lembretes', async () => {
+      mockGetPendingRemindersByPhone.mockResolvedValue([]);
+
+      const newScheduledAt = new Date('2025-07-11T16:00:00.000Z');
+      const result = await processRescheduleReminderCommand(senderPhone, 1, newScheduledAt);
+
+      expect(result.success).toBe(false);
+      expect(result.response).toContain('❌ Você não tem lembretes pendentes para reagendar');
+    });
+
+    it('deve tratar erro na busca de lembretes', async () => {
+      mockGetPendingRemindersByPhone.mockRejectedValue(new Error('Erro no banco'));
+
+      const newScheduledAt = new Date('2025-07-11T16:00:00.000Z');
+      const result = await processRescheduleReminderCommand(senderPhone, 1, newScheduledAt);
+
+      expect(result.success).toBe(false);
+      expect(result.response).toContain('❌ Erro ao reagendar lembrete');
+    });
+
+    it('deve truncar mensagens longas na exibição', async () => {
+      const longMessageReminder = {
+        ...mockReminders[0],
+        message: '🔔 *Lembrete:* ' + 'a'.repeat(100)
+      };
+      
+      mockGetPendingRemindersByPhone.mockResolvedValue([longMessageReminder]);
+      mockRescheduleReminderById.mockResolvedValue(longMessageReminder);
+
+      const newScheduledAt = new Date('2025-07-11T16:00:00.000Z');
+      const result = await processRescheduleReminderCommand(senderPhone, 1, newScheduledAt);
+
+      expect(result.success).toBe(true);
+      expect(result.response).toContain('...');
+    });
+
+    it('deve remover prefixo do lembrete na exibição', async () => {
+      mockGetPendingRemindersByPhone.mockResolvedValue(mockReminders);
+      mockRescheduleReminderById.mockResolvedValue(mockReminders[0]);
+
+      const newScheduledAt = new Date('2025-07-11T16:00:00.000Z');
+      const result = await processRescheduleReminderCommand(senderPhone, 1, newScheduledAt);
+
+      expect(result.success).toBe(true);
+      expect(result.response).toContain('Reunião importante');
+      expect(result.response).not.toContain('🔔 *Lembrete:*');
+    });
+
+    it('deve mostrar data anterior e nova data formatadas', async () => {
+      mockGetPendingRemindersByPhone.mockResolvedValue(mockReminders);
+      mockRescheduleReminderById.mockResolvedValue(mockReminders[0]);
+
+      const newScheduledAt = new Date('2025-07-11T16:00:00.000Z');
+      const result = await processRescheduleReminderCommand(senderPhone, 1, newScheduledAt);
+
+      expect(result.success).toBe(true);
+      expect(result.response).toContain('⏰ *Data anterior:*');
+      expect(result.response).toContain('🆕 *Nova data:*');
+      expect(result.response).toContain('11/07/2025, 14:00'); // Data anterior (com vírgula)
+      expect(result.response).toContain('11/07/2025, 16:00'); // Nova data (com vírgula)
+    });
+
+    it('deve incluir nota de reagendamento automático quando aplicável', async () => {
+      mockGetPendingRemindersByPhone.mockResolvedValue(mockReminders);
+      mockRescheduleReminderById.mockResolvedValue(mockReminders[0]);
+
+      const newScheduledAt = new Date('2025-07-11T16:00:00.000Z');
+      const result = await processRescheduleReminderCommand(senderPhone, 1, newScheduledAt, true);
+
+      expect(result.success).toBe(true);
+      expect(result.response).toContain('⏰ *Horário já passou hoje, agendado para amanhã.*');
+    });
+
+    it('deve tratar erro no serviço de reagendamento', async () => {
+      mockGetPendingRemindersByPhone.mockResolvedValue(mockReminders);
+      mockRescheduleReminderById.mockRejectedValue(new Error('Erro no banco'));
+
+      const newScheduledAt = new Date('2025-07-11T16:00:00.000Z');
+      const result = await processRescheduleReminderCommand(senderPhone, 1, newScheduledAt);
+
+      expect(result.success).toBe(false);
+      expect(result.response).toContain('❌ Erro ao reagendar lembrete');
+    });
+
+    it('deve reagendar o segundo lembrete corretamente', async () => {
+      mockGetPendingRemindersByPhone.mockResolvedValue(mockReminders);
+      mockRescheduleReminderById.mockResolvedValue(mockReminders[1]);
+
+      const newScheduledAt = new Date('2025-07-12T15:00:00.000Z');
+      const result = await processRescheduleReminderCommand(senderPhone, 2, newScheduledAt);
+
+      expect(result.success).toBe(true);
+      expect(result.response).toContain('Lembrete #2 reagendado');
+      expect(result.response).toContain('Ligar para médico');
+      expect(mockRescheduleReminderById).toHaveBeenCalledWith('2', newScheduledAt);
     });
   });
 
