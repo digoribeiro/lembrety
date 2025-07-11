@@ -37,6 +37,7 @@ describe('SchedulerService', () => {
     sentAt: null,
     retryCount: 0,
     lastError: null,
+    source: 'api', // Campo obrigatório adicionado
   };
 
   beforeEach(() => {
@@ -93,8 +94,7 @@ describe('SchedulerService', () => {
       expect(mockPrismaClient.reminder.findMany).toHaveBeenCalledWith({
         where: {
           scheduledAt: {
-            gte: expect.any(Date),
-            lte: expect.any(Date),
+            lte: expect.any(Date), // Agora usa apenas lte
           },
           isSent: false,
           OR: [{ retryCount: { lt: 3 } }, { retryCount: null }],
@@ -187,7 +187,7 @@ describe('SchedulerService', () => {
 
       // Assert
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('[Scheduler] Encontrados 1 lembretes para envio imediato')
+        expect.stringContaining('[Scheduler] Encontrados 1 lembretes para envio')
       );
     });
 
@@ -199,10 +199,9 @@ describe('SchedulerService', () => {
       // Act
       await checkPendingReminders();
 
-      // Assert - Verifica se os logs mostram o ajuste correto de fuso horário
+      // Assert - Verifica se os logs mostram o horário correto
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('[Scheduler] Horário do servidor:'),
-        expect.stringContaining('| Horário real (Brasília):')
+        expect.stringMatching(/\[Scheduler\] Brasil Local:.*\| UTC Literal:/)
       );
     });
 
@@ -217,9 +216,7 @@ describe('SchedulerService', () => {
       const findManyCall = mockPrismaClient.reminder.findMany.mock.calls[0][0];
       const whereClause = findManyCall.where;
       
-      expect(whereClause.scheduledAt).toHaveProperty('gte');
       expect(whereClause.scheduledAt).toHaveProperty('lte');
-      expect(whereClause.scheduledAt.gte).toBeInstanceOf(Date);
       expect(whereClause.scheduledAt.lte).toBeInstanceOf(Date);
     });
 
