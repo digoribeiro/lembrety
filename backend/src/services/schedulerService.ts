@@ -8,24 +8,28 @@ const JOB_INTERVAL = "* * * * *"; // Executa a cada minuto
 
 // Função principal para verificar lembretes pendentes
 export async function checkPendingReminders() {
-  const serverNow = new Date(); // Horário atual do servidor (3h adiantado)
-
-  // Ajustar para horário real de Brasília (subtrair 3 horas)
-  const realNow = new Date(serverNow.getTime() - 3 * 60 * 60 * 1000);
-  // Calcular 1 minuto atrás no horário real
-  const oneMinuteAgo = new Date(realNow.getTime() - 1000);
-
+  const nowBrazil = new Date();
+  
+  // Como salvamos horário literal como UTC, comparamos com horário Brasil atual em UTC
+  const nowUTC = new Date(Date.UTC(
+    nowBrazil.getFullYear(), 
+    nowBrazil.getMonth(), 
+    nowBrazil.getDate(),
+    nowBrazil.getHours(), 
+    nowBrazil.getMinutes()
+  ));
+  
   console.log(
-    `[Scheduler] Horário do servidor: ${oneMinuteAgo.toISOString()}`,
-    `| Horário real (Brasília): ${realNow.toISOString()}`
+    `[Scheduler] Brasil Local: ${nowBrazil.toISOString()} | UTC Literal: ${nowUTC.toISOString()}`
   );
 
   try {
+    // Busca todos os lembretes que já deveriam ter sido enviados
+    // Como salvamos horário literal em UTC, comparamos com horário atual também em UTC
     const pendingReminders = await prisma.reminder.findMany({
       where: {
         scheduledAt: {
-          gte: oneMinuteAgo,
-          lte: realNow,
+          lte: nowUTC, // Busca lembretes com scheduledAt <= agora (UTC literal)
         },
         isSent: false,
         OR: [{ retryCount: { lt: 3 } }, { retryCount: null }],
@@ -34,10 +38,16 @@ export async function checkPendingReminders() {
     });
 
     console.log(
-      `[Scheduler] Encontrados ${pendingReminders.length} lembretes para envio imediato`
+      `[Scheduler] Encontrados ${pendingReminders.length} lembretes para envio`
     );
 
+    // Debug: mostrar lembretes encontrados
     for (const reminder of pendingReminders) {
+      // Como salvamos horário literal, o horário no banco representa exatamente o que o usuário digitou
+      const scheduledBrasil = reminder.scheduledAt.toLocaleString('pt-BR');
+      console.log(
+        `[Scheduler] → Lembrete ${reminder.id}: agendado para ${reminder.scheduledAt.toISOString()} (${scheduledBrasil} literal)`
+      );
       await processReminder(reminder);
     }
   } catch (error) {

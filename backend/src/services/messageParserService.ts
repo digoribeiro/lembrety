@@ -84,7 +84,15 @@ export function parseReminderMessage(messageBody: string, senderPhone: string): 
 }
 
 /**
- * Extrai data e hora do match da regex
+ * Cria data salvando horário literal como UTC (simula UTC-3)
+ */
+function createLiteralDate(year: number, month: number, day: number, hour: number, minute: number): Date {
+  // Para salvar "07:00" como "07:00:00.000Z" no banco
+  return new Date(Date.UTC(year, month, day, hour, minute));
+}
+
+/**
+ * Extrai data e hora do match da regex - NOVA VERSÃO UTC-3
  */
 function parseDateTime(match: RegExpMatchArray): Date | null {
   const now = new Date();
@@ -101,7 +109,7 @@ function parseDateTime(match: RegExpMatchArray): Date | null {
       const month = parseInt(match[4]) - 1; // JS months are 0-indexed
       const year = match[5] ? parseInt(match[5]) : currentYear;
       
-      const date = new Date(year, month, day, hour, minute);
+      const date = createLiteralDate(year, month, day, hour, minute);
       return validateDate(date);
     }
 
@@ -110,10 +118,12 @@ function parseDateTime(match: RegExpMatchArray): Date | null {
       const hour = parseInt(match[1]);
       const minute = parseInt(match[2]);
       
-      const date = new Date(currentYear, currentMonth, currentDate, hour, minute);
+      const date = createLiteralDate(currentYear, currentMonth, currentDate, hour, minute);
       
       // Se o horário já passou hoje, agenda para amanhã
-      if (date <= now) {
+      const nowUTC = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 
+        now.getHours(), now.getMinutes()));
+      if (date <= nowUTC) {
         date.setDate(date.getDate() + 1);
       }
       
@@ -128,7 +138,7 @@ function parseDateTime(match: RegExpMatchArray): Date | null {
       const hour = parseInt(match[4]);
       const minute = parseInt(match[5]);
       
-      const date = new Date(year, month, day, hour, minute);
+      const date = createLiteralDate(year, month, day, hour, minute);
       return validateDate(date);
     }
 
@@ -138,10 +148,12 @@ function parseDateTime(match: RegExpMatchArray): Date | null {
       const hour = parseInt(match[2]);
       const minute = parseInt(match[3]);
       
-      const date = new Date(currentYear, currentMonth, currentDate, hour, minute);
+      const date = createLiteralDate(currentYear, currentMonth, currentDate, hour, minute);
       
       if (dayWord === 'hoje') {
-        if (date <= now) {
+        const nowUTC = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 
+          now.getHours(), now.getMinutes()));
+        if (date <= nowUTC) {
           date.setDate(date.getDate() + 1); // Se já passou, agenda para amanhã
         }
       } else if (dayWord === 'amanhã') {
@@ -260,8 +272,9 @@ Formato: #lembrete [quando] [hora] [mensagem]`
     });
 
     const formatDate = (date: Date): string => {
+      // Como salvamos horário literal em UTC, exibimos usando UTC para manter o horário original
       return date.toLocaleString('pt-BR', {
-        timeZone: 'America/Sao_Paulo',
+        timeZone: 'UTC',
         day: '2-digit',
         month: '2-digit', 
         year: 'numeric',
